@@ -1,0 +1,50 @@
+---
+- :data:
+    :name: Thing
+    :type: object
+    :schema_type: Intangible
+    :content_type: entity
+    :boost: 1.0
+    :features:
+      :translatable:
+        :allowed: true
+      :creatable:
+        :allowed: true
+    :properties:
+      :id:
+        :label: id
+        :type: key
+      :data_type:
+        :label: Inhaltstyp
+        :type: classification
+        :tree_label: Inhaltstypen
+        :default_value: 'Thing'
+        :ui:
+          :show:
+            :content_area: none
+          :edit:
+            :disabled: true
+      :meta_data:
+        :type: mixin
+        :name: meta_data
+      :name:
+        :label: Titel
+        :type: string
+        :storage_location: column
+        :search: true
+        :validations:
+          :required: true
+        :ui:
+          :show:
+            :content_area: none
+      :description:
+        :label: Beschreibung
+        :type: string
+        :storage_location: column
+        :search: true
+        :ui:
+          :edit:
+            :type: text_editor
+            :options:
+              :data-size: full
+        :advanced_search: true

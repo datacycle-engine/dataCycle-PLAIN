@@ -1,0 +1,12 @@
+@charset "UTF-8";
+// load settings
+@import '../../../vendor/gems/data-cycle-core/app/assets/stylesheets/settings';
+// @import 'settings';
+
+// load additional variables
+@import '../../../vendor/gems/data-cycle-core/app/assets/stylesheets/variables';
+// @import 'variables';
+
+// load modules
+@import '../../../vendor/gems/data-cycle-core/app/assets/stylesheets/modules';
+// import "modules";

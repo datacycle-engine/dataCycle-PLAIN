@@ -1,0 +1,14 @@
+**/.git/
+**/.bundle/
+**/log/*
+**/*.log
+**/public/downloads/*
+**/public/uploads
+**/public/assets
+**/private/import
+**/lib/assets
+**/tmp/
+**/node_modules/
+**/.idea
+**/db/backups
+**/.env

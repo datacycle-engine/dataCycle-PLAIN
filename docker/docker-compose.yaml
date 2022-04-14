@@ -1,0 +1,58 @@
+version: '3.9'
+
+services:
+  postgres:
+    build:
+      context: ${PWD}
+      dockerfile: docker/Dockerfile-postgres
+    environment:
+      - POSTGRES_DATABASE=${POSTGRES_DATABASE:-datacycle-plain_development}
+      - POSTGRES_USER=${POSTGRES_USER:-developer}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+      - POSTGRES_VERSION=${POSTGRES_VERSION:-13}
+    shm_size: 4gb
+  mongodb:
+    image: mongo:3.6
+  web:
+    build:
+      context: ${PWD}
+      dockerfile: docker/Dockerfile-web
+    environment:
+      - RAILS_ENV=${RAILS_ENV:-development}
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_DATABASE=${POSTGRES_DATABASE:-datacycle-plain_development}
+      - POSTGRES_USER=${POSTGRES_USER:-developer}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+      - PGPASSWORD=${POSTGRES_PASSWORD:-password}
+      - MONGODB_HOST=${MONGODB_HOST:-mongodb}
+      - APP_HOST=${APP_HOST:-localhost:3000}
+    command: bin/rails server -b 0.0.0.0 -p 3000
+    ports:
+      - '3000:3000'
+    depends_on:
+      - postgres
+      - mongodb
+    volumes:
+      - '${PWD}:/var/app'
+    stdin_open: true
+    tty: true
+  jobs:
+    build:
+      context: ${PWD}
+      dockerfile: docker/Dockerfile-web
+    environment:
+      - RAILS_ENV=${RAILS_ENV:-development}
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_DATABASE=${POSTGRES_DATABASE:-datacycle-plain_development}
+      - POSTGRES_USER=${POSTGRES_USER:-developer}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+      - PGPASSWORD=${POSTGRES_PASSWORD:-password}
+      - MONGODB_HOST=${MONGODB_HOST:-mongodb}
+      - APP_HOST=${APP_HOST:-localhost:3000}
+    command: bin/rake jobs:work
+    depends_on:
+      - postgres
+      - mongodb
+      - web
+    volumes:
+      - '${PWD}:/var/app'

@@ -1,0 +1,35 @@
+FROM postgres:13.4
+
+ENV POSTGIS_MAJOR 3
+ENV POSTGIS_VERSION 2.5.1+dfsg-1.pgdg90+1
+
+ENV TZ=Europe/Vienna
+ENV PGTZ=Europe/Vienna
+
+RUN apt-get update \
+  && apt-cache showpkg postgresql-$PG_MAJOR-postgis-$POSTGIS_MAJOR \
+  && apt-get install -y --no-install-recommends \
+    postgresql-$PG_MAJOR-postgis-$POSTGIS_MAJOR \
+    postgresql-$PG_MAJOR-postgis-$POSTGIS_MAJOR-scripts \
+    postgresql-server-dev-$PG_MAJOR \
+    git build-essential software-properties-common openssh-client \
+    gettext-base \
+    libical-dev \
+    qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools \
+  && rm -rf /var/lib/apt/lists/*
+
+# install phash-hamming
+RUN git clone https://ansible:SKX1_9CNNo6CTLh6jVVn@git.pixelpoint.biz/data-cycle/postgres-phash-hamming.git /tmp/postgres-phash-hamming \
+  && cd /tmp/postgres-phash-hamming && make \
+  && cd /tmp/postgres-phash-hamming && make install \
+  && cd / && rm -Rf /tmp/postgres-phash-hamming
+
+# install pg_rrule
+RUN git clone https://ansible:xtmZiT8MaxoomfgKCvST@git.pixelpoint.biz/data-cycle/pg_rrule.git /tmp/pg_rrule \
+  && cd /tmp/pg_rrule/src && qmake pg_rrule.pro \
+  && cd /tmp/pg_rrule/ && make \
+  && cd /tmp/pg_rrule/src && make \
+  && cp /tmp/pg_rrule/src/libpg_rrule.so /usr/lib/postgresql/13/lib/pg_rrule.so \
+  && cp /tmp/pg_rrule/pg_rrule.control /usr/share/postgresql/13/extension/ \
+  && cp /tmp/pg_rrule/sql/pg_rrule.sql /usr/share/postgresql/13/extension/pg_rrule--0.2.0.sql \
+  && cd / && rm -Rf /tmp/pg_rrule

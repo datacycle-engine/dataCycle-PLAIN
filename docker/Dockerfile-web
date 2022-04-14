@@ -1,0 +1,62 @@
+FROM ruby:2.7.5-slim
+
+RUN apt-get update && apt-get install -y npm && npm install -g yarn
+
+RUN apt-get update && apt-get install -y software-properties-common build-essential automake libtool wget \
+    cimg-dev libtag1-dev libpq-dev \
+    ca-certificates \
+    && update-ca-certificates
+
+# PostgreSQL
+RUN add-apt-repository "deb http://apt.postgresql.org/pub/repos/apt/ bullseye-pgdg main"
+RUN wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
+RUN apt-get update
+RUN apt-get install -y postgresql-client-14
+
+# pHash
+RUN git clone https://github.com/aetilius/pHash.git /tmp/phash
+RUN cd /tmp/phash \
+    && git -c advice.detachedHead=false checkout 4bd5fc669f7d50ba2ae7a3f5524df56b3e4f96ca \
+    && autoreconf -vif \
+    && ./configure --disable-video-hash --disable-audio-hash --disable-pthread \
+    && make \
+    && make install
+
+WORKDIR /var/app
+
+RUN useradd --create-home ruby \
+  && chown -R ruby:ruby /var/app
+
+ENV PATH="${PATH}:/home/ruby/.local/bin" \
+    USER="ruby"
+
+USER ruby
+
+RUN mkdir -p /var/app/vendor/gems/data-cycle-core/
+RUN mkdir -p /var/app/vendor/gems/data-cycle-core/vendor/gems/translations
+RUN mkdir -p /var/app/vendor/gems/datacycle-schema-common/
+
+RUN gem install bundler
+
+COPY --chown=ruby:ruby Gemfile* /var/app/
+COPY vendor/gems/data-cycle-core/GemfileCore /var/app/vendor/gems/data-cycle-core/
+COPY vendor/gems/data-cycle-core/data_cycle_core.gemspec /var/app/vendor/gems/data-cycle-core
+COPY vendor/gems/data-cycle-core/GEM_VERSION /var/app/vendor/gems/data-cycle-core
+COPY vendor/gems/data-cycle-core/vendor/gems/translations/translations.gemspec /var/app/vendor/gems/data-cycle-core/vendor/gems/translations
+COPY vendor/gems/data-cycle-core/vendor/gems/translations/lib/translations/version.rb /var/app/vendor/gems/data-cycle-core/vendor/gems/translations/lib/translations/
+COPY vendor/gems/datacycle-schema-common/datacycle-schema-common.gemspec /var/app/vendor/gems/datacycle-schema-common
+COPY vendor/gems/datacycle-schema-common/GEM_VERSION /var/app/vendor/gems/datacycle-schema-common/
+
+RUN bundle install
+
+COPY --chown=ruby:ruby  package.json /var/app
+COPY --chown=ruby:ruby yarn.lock /var/app
+COPY --chown=ruby:ruby vendor/gems/data-cycle-core/package.json /var/app/vendor/gems/data-cycle-core
+
+RUN yarn
+
+COPY --chown=ruby:ruby . .
+
+ENTRYPOINT ["/var/app/docker/web/bin/entrypoint.sh"]
+
+CMD ["bash"]

@@ -1,0 +1,12 @@
+.DS_Store
+
+.bundle/
+node_modules/
+log/
+public/assets/dev-build
+public/assets/fonts
+tmp/
+
+.env
+.tool-versions
+public/package_infos.json

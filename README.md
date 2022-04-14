@@ -1,24 +1,18 @@
-# README
+# dataCycle - PLAIN
 
-This README would normally document whatever steps are necessary to get the
-application up and running.
+This repository can be used as a basis for specific dataCycle instances and experiments. It only contains the essential dependencies and configuration in order to provide a slim base.
 
-Things you may want to cover:
+## Setup
 
-* Ruby version
+* Install [Docker](https://docs.docker.com/get-docker/) (including the docker compose plugin)
+* Checkout dataCycle PLAIN and its dependencies:
+  `git clone --recurse-submodules git@git.pixelpoint.biz:datacycle-open-source/datacycle-plain.git`
+* Prepare individual environment configuration (`cp .env.example .env`)
+* Start dataCycle:
+  `docker compose up`
+* Watch console output and save superadmin credentials
+* Open [http://localhost:3000/](http://localhost:3000/)
 
-* System dependencies
+## License
 
-* Configuration
-
-* Database creation
-
-* Database initialization
-
-* How to run the test suite
-
-* Services (job queues, cache servers, search engines, etc.)
-
-* Deployment instructions
-
-* ...
+dataCycle is released under the [GNU Affero General Public License](https://www.gnu.org/licenses/agpl-3.0-standalone.html)
