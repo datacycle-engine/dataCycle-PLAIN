@@ -5,3 +5,4 @@
 [submodule "vendor/gems/datacycle-schema-common"]
 	path = vendor/gems/datacycle-schema-common
 	url = git@github.com:datacycle-engine/dataCycle-SCHEMA-Common.git
+	branch = master
