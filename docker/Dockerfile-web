@@ -1,8 +1,12 @@
 FROM ruby:2.7.5-slim
 
-RUN apt-get update && apt-get install -y npm && npm install -g yarn
+RUN apt-get update && apt-get install -y curl \
+    && curl -sSL https://deb.nodesource.com/setup_14.x | bash - \
+    && curl -sSL https://dl.yarnpkg.com/debian/pubkey.gpg | apt-key add - \
+    && echo "deb https://dl.yarnpkg.com/debian/ stable main" | tee /etc/apt/sources.list.d/yarn.list \
+    && apt-get update && apt-get install -y nodejs && npm install -g yarn
 
-RUN apt-get update && apt-get install -y software-properties-common build-essential automake libtool wget \
+RUN apt-get update && apt-get install -y software-properties-common git build-essential automake libtool wget \
     cimg-dev libtag1-dev libpq-dev \
     ca-certificates \
     && update-ca-certificates
