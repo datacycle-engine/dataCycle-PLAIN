@@ -19,13 +19,13 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 # install phash-hamming
-RUN git clone https://ansible:SKX1_9CNNo6CTLh6jVVn@git.pixelpoint.biz/data-cycle/postgres-phash-hamming.git /tmp/postgres-phash-hamming \
+RUN git clone https://github.com/PixNyanNyan/postgres-phash-hamming.git /tmp/postgres-phash-hamming \
   && cd /tmp/postgres-phash-hamming && make \
   && cd /tmp/postgres-phash-hamming && make install \
   && cd / && rm -Rf /tmp/postgres-phash-hamming
 
 # install pg_rrule
-RUN git clone https://ansible:xtmZiT8MaxoomfgKCvST@git.pixelpoint.biz/data-cycle/pg_rrule.git /tmp/pg_rrule \
+RUN git clone https://github.com/petropavel13/pg_rrule.git /tmp/pg_rrule \
   && cd /tmp/pg_rrule/src && qmake pg_rrule.pro \
   && cd /tmp/pg_rrule/ && make \
   && cd /tmp/pg_rrule/src && make \
