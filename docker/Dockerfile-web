@@ -37,7 +37,6 @@ ENV PATH="${PATH}:/home/ruby/.local/bin" \
 USER ruby
 
 RUN mkdir -p /var/app/vendor/gems/data-cycle-core/
-RUN mkdir -p /var/app/vendor/gems/data-cycle-core/vendor/gems/translations
 RUN mkdir -p /var/app/vendor/gems/datacycle-schema-common/
 
 RUN gem install bundler
@@ -46,8 +45,6 @@ COPY --chown=ruby:ruby Gemfile* /var/app/
 COPY vendor/gems/data-cycle-core/GemfileCore /var/app/vendor/gems/data-cycle-core/
 COPY vendor/gems/data-cycle-core/data_cycle_core.gemspec /var/app/vendor/gems/data-cycle-core
 COPY vendor/gems/data-cycle-core/GEM_VERSION /var/app/vendor/gems/data-cycle-core
-COPY vendor/gems/data-cycle-core/vendor/gems/translations/translations.gemspec /var/app/vendor/gems/data-cycle-core/vendor/gems/translations
-COPY vendor/gems/data-cycle-core/vendor/gems/translations/lib/translations/version.rb /var/app/vendor/gems/data-cycle-core/vendor/gems/translations/lib/translations/
 COPY vendor/gems/datacycle-schema-common/datacycle-schema-common.gemspec /var/app/vendor/gems/datacycle-schema-common
 COPY vendor/gems/datacycle-schema-common/GEM_VERSION /var/app/vendor/gems/datacycle-schema-common/
 
@@ -57,7 +54,7 @@ COPY --chown=ruby:ruby  package.json /var/app
 COPY --chown=ruby:ruby yarn.lock /var/app
 COPY --chown=ruby:ruby vendor/gems/data-cycle-core/package.json /var/app/vendor/gems/data-cycle-core
 
-RUN yarn
+RUN yarn && yarn upgrade data-cycle-core
 
 COPY --chown=ruby:ruby . .
 
