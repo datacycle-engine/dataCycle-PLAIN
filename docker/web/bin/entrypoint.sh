@@ -15,7 +15,7 @@ if [ "$1" == "rails" ] || [ "$1" == "bin/rails" ]; then
   if [ "$RAILS_ENV" = "development"  ]; then
     bin/bundle install
 
-    yarn install
+    pnpm i
 
     bin/rails db:migrate
 
@@ -29,7 +29,7 @@ elif [ "$1" == "rake" ] || [ "$1" == "bin/rake" ]; then
   if [ "$RAILS_ENV" = "development"  ]; then
     bin/bundle install
 
-    yarn install
+    pnpm i
   fi
 
   exec "$@"

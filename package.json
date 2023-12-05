@@ -1,8 +1,8 @@
 {
   "name": "data-cycle-base",
-  "version": "22.4.0",
+  "version": "23.12.1",
   "description": "data-cycle-base assets",
-  "author": "Patrick Rainer",
+  "author": "dataCycle GmbH",
   "dependencies": {
     "data-cycle-core": "file:vendor/gems/data-cycle-core"
   }

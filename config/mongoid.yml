@@ -25,7 +25,6 @@ production:
       options:
         read:
           mode: :primary
-        max_pool_size: 1
 
 test:
   clients:
@@ -36,4 +35,3 @@ test:
       options:
         read:
           mode: :primary
-        max_pool_size: 1

@@ -1,10 +1,14 @@
-FROM ruby:2.7.5-slim
+FROM ruby:3.2.2-slim-bullseye
+
+ENV DEBIAN_FRONTEND noninteractive
+ENV LANG C.UTF-8
+ENV TZ=Europe/Vienna
 
 RUN apt-get update && apt-get install -y curl \
-    && curl -sSL https://deb.nodesource.com/setup_14.x | bash - \
+    && curl -sSL https://deb.nodesource.com/setup_18.x | bash - \
     && curl -sSL https://dl.yarnpkg.com/debian/pubkey.gpg | apt-key add - \
     && echo "deb https://dl.yarnpkg.com/debian/ stable main" | tee /etc/apt/sources.list.d/yarn.list \
-    && apt-get update && apt-get install -y nodejs && npm install -g yarn
+    && apt-get update && apt-get install -y nodejs && npm install -g pnpm && npm install -g yarn
 
 RUN apt-get update && apt-get install -y software-properties-common git build-essential automake libtool wget \
     cimg-dev libtag1-dev libpq-dev \
@@ -15,7 +19,7 @@ RUN apt-get update && apt-get install -y software-properties-common git build-es
 RUN add-apt-repository "deb http://apt.postgresql.org/pub/repos/apt/ bullseye-pgdg main"
 RUN wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
 RUN apt-get update
-RUN apt-get install -y postgresql-client-14
+RUN apt-get install -y postgresql-client-13
 
 # pHash
 RUN git clone https://github.com/aetilius/pHash.git /tmp/phash
@@ -51,10 +55,10 @@ COPY vendor/gems/datacycle-schema-common/GEM_VERSION /var/app/vendor/gems/datacy
 RUN bundle install
 
 COPY --chown=ruby:ruby  package.json /var/app
-COPY --chown=ruby:ruby yarn.lock /var/app
+# COPY --chown=ruby:ruby pnpm-lock.yaml /var/app
 COPY --chown=ruby:ruby vendor/gems/data-cycle-core/package.json /var/app/vendor/gems/data-cycle-core
 
-RUN yarn && yarn upgrade data-cycle-core
+RUN pnpm i
 
 COPY --chown=ruby:ruby . .
 

@@ -4,7 +4,7 @@ default: &default
   schema_search_path: postgis, public
   # For details on connection pooling, see Rails configuration guide
   # http://guides.rubyonrails.org/configuring.html#database-pooling
-  pool: <%= Rails.application.secrets.dig(:puma_max_threads) || 5 %>
+  pool: <%= Rails.application.secrets.dig(:puma_max_threads)&.*(2) || 10 %>
   host:     <%= ENV["POSTGRES_HOST"] || "postgres" %>
   port:     <%= ENV["POSTGRES_PORT"] || 5432 %>
   username: <%= ENV["POSTGRES_USER"] || "developer" %>

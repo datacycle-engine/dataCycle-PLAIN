@@ -94,6 +94,15 @@ COMMENT ON EXTENSION "uuid-ossp" IS 'generate universally unique identifiers (UU
 
 
 --
+-- Name: array_reverse(anyarray); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.array_reverse(anyarray) RETURNS anyarray
+    LANGUAGE sql IMMUTABLE STRICT
+    AS $_$ SELECT ARRAY( SELECT $1 [i] FROM generate_subscripts($1, 1) AS s(i) ORDER BY i DESC ); $_$;
+
+
+--
 -- Name: compute_thing_schema_types(jsonb, character varying); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -108,7 +117,16 @@ CREATE FUNCTION public.compute_thing_schema_types(schema_types jsonb, template_n
 
 CREATE FUNCTION public.delete_ca_paths_transitive_trigger_1() RETURNS trigger
     LANGUAGE plpgsql
-    AS $$ BEGIN PERFORM generate_ca_paths_transitive (ARRAY[OLD.classification_alias_id]::uuid[]); RETURN NEW; END; $$;
+    AS $$ BEGIN PERFORM generate_ca_paths_transitive ( ARRAY_AGG( deleted_classification_groups.classification_alias_id ) ) FROM ( SELECT DISTINCT old_classification_groups.classification_alias_id FROM old_classification_groups ) "deleted_classification_groups"; RETURN NULL; END; $$;
+
+
+--
+-- Name: delete_ca_paths_transitive_trigger_2(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.delete_ca_paths_transitive_trigger_2() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$ BEGIN PERFORM generate_ca_paths_transitive ( ARRAY_AGG( deleted_classification_groups.classification_alias_id ) ) FROM ( SELECT DISTINCT old_classification_groups.classification_alias_id FROM old_classification_groups INNER JOIN new_classification_groups ON old_classification_groups.id = new_classification_groups.id WHERE old_classification_groups.deleted_at IS NULL AND new_classification_groups.deleted_at IS NOT NULL ) "deleted_classification_groups"; RETURN NULL; END; $$;
 
 
 --
@@ -117,7 +135,7 @@ CREATE FUNCTION public.delete_ca_paths_transitive_trigger_1() RETURNS trigger
 
 CREATE FUNCTION public.delete_ccc_relations_transitive_trigger_1() RETURNS trigger
     LANGUAGE plpgsql
-    AS $$ BEGIN PERFORM generate_collected_cl_content_relations_transitive (ARRAY[OLD.content_data_id]::uuid[], ARRAY[OLD.classification_id]::uuid[]); RETURN NEW; END; $$;
+    AS $$ BEGIN PERFORM generate_collected_cl_content_relations_transitive (ARRAY [OLD.content_data_id]::UUID []); RETURN NULL; END; $$;
 
 
 --
@@ -126,7 +144,7 @@ CREATE FUNCTION public.delete_ccc_relations_transitive_trigger_1() RETURNS trigg
 
 CREATE FUNCTION public.delete_ccc_relations_transitive_trigger_2() RETURNS trigger
     LANGUAGE plpgsql
-    AS $$ BEGIN PERFORM generate_collected_cl_content_relations_transitive (ARRAY_AGG(content_data_id), ARRAY[]::uuid[]) FROM ( SELECT DISTINCT classification_contents.content_data_id FROM old_classification_alias_paths_transitive INNER JOIN classification_groups ON classification_groups.classification_alias_id = ANY (old_classification_alias_paths_transitive.full_path_ids) AND classification_groups.deleted_at IS NULL INNER JOIN classification_contents ON classification_contents.classification_id = classification_groups.classification_id) "collected_classification_content_relations_alias"; RETURN NULL; END; $$;
+    AS $$ BEGIN PERFORM generate_collected_cl_content_relations_transitive ( array_agg( collected_classification_content_relations_alias.content_data_id ) ) FROM ( SELECT DISTINCT classification_contents.content_data_id FROM old_classification_alias_paths_transitive INNER JOIN classification_groups ON classification_groups.classification_alias_id = ANY ( old_classification_alias_paths_transitive.full_path_ids ) AND classification_groups.deleted_at IS NULL INNER JOIN classification_contents ON classification_contents.classification_id = classification_groups.classification_id ) "collected_classification_content_relations_alias"; RETURN NULL; END; $$;
 
 
 --
@@ -157,6 +175,15 @@ CREATE FUNCTION public.delete_content_content_links_trigger() RETURNS trigger
 
 
 --
+-- Name: delete_external_hashes_trigger_1(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.delete_external_hashes_trigger_1() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$ BEGIN DELETE FROM external_hashes WHERE external_hashes.id IN ( SELECT eh.id FROM external_hashes eh WHERE EXISTS ( SELECT 1 FROM old_thing_translations INNER JOIN things ON things.id = old_thing_translations.thing_id WHERE things.external_source_id = eh.external_source_id AND things.external_key = eh.external_key AND old_thing_translations.locale = eh.locale ) FOR UPDATE ); RETURN NULL; END; $$;
+
+
+--
 -- Name: delete_schedule_occurences(uuid[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -180,7 +207,34 @@ CREATE FUNCTION public.delete_schedule_occurences_trigger() RETURNS trigger
 
 CREATE FUNCTION public.generate_ca_paths_transitive(classification_alias_ids uuid[]) RETURNS void
     LANGUAGE plpgsql
-    AS $$ BEGIN DELETE FROM classification_alias_paths_transitive WHERE full_path_ids && classification_alias_ids; WITH RECURSIVE paths ( id, ancestors_ids, full_path_ids, full_path_names, link_types ) AS ( SELECT ca1.id AS id, array_remove(ARRAY [ca2.id]::uuid [], NULL) AS ancestors_ids, array_remove(ARRAY [ca1.id, ca2.id]::uuid [], NULL) AS full_path_ids, array_remove( ARRAY [ca1.internal_name, ca2.internal_name, classification_tree_labels.name]::varchar [], NULL ) AS full_path_names, ( CASE WHEN ca2.id IS NULL THEN ARRAY []::text [] ELSE ARRAY [classification_alias_links.link_type]::text [] END ) AS link_types FROM classification_alias_links JOIN classification_aliases ca1 ON ca1.id = classification_alias_links.child_classification_alias_id JOIN classification_trees ON classification_trees.classification_alias_id = ca1.id JOIN classification_tree_labels ON classification_tree_labels.id = classification_trees.classification_tree_label_id LEFT OUTER JOIN classification_aliases ca2 ON ca2.id = classification_alias_links.parent_classification_alias_id WHERE ca1.id = ANY (classification_alias_ids) AND classification_alias_links.link_type = 'broader' UNION ALL SELECT classification_aliases.id AS id, ( classification_alias_links.parent_classification_alias_id || paths_1.ancestors_ids ) AS ancestors_ids, ( classification_aliases.id || paths_1.full_path_ids ) AS full_path_ids, ( classification_aliases.internal_name || paths_1.full_path_names ) AS full_path_names, ( classification_alias_links.link_type || paths_1.link_types ) AS link_types FROM classification_alias_links JOIN classification_aliases ON classification_aliases.id = classification_alias_links.child_classification_alias_id JOIN paths paths_1 ON paths_1.id = classification_alias_links.parent_classification_alias_id WHERE classification_aliases.id <> ALL (paths_1.full_path_ids) ) INSERT INTO classification_alias_paths_transitive ( classification_alias_id, ancestor_ids, full_path_ids, full_path_names, link_types ) SELECT DISTINCT paths.id, paths.ancestors_ids, paths.full_path_ids, paths.full_path_names, paths.link_types FROM paths; RETURN; END; $$;
+    AS $$ BEGIN IF array_length(classification_alias_ids, 1) > 0 THEN WITH RECURSIVE paths( id, parent_id, ancestor_ids, full_path_ids, full_path_names, link_types, tree_label_id ) AS ( SELECT classification_aliases.id, classification_trees.parent_classification_alias_id, ARRAY []::uuid [], ARRAY [classification_aliases.id], ARRAY [classification_aliases.internal_name], ARRAY []::text [], classification_trees.classification_tree_label_id FROM classification_trees JOIN classification_aliases ON classification_aliases.id = classification_trees.classification_alias_id WHERE classification_trees.classification_alias_id = ANY(classification_alias_ids) UNION ALL SELECT paths.id, classification_trees.parent_classification_alias_id, ancestor_ids || classification_aliases.id, full_path_ids || classification_aliases.id, full_path_names || classification_aliases.internal_name, ARRAY ['broader'] || paths.link_types, classification_trees.classification_tree_label_id FROM classification_trees JOIN paths ON paths.parent_id = classification_trees.classification_alias_id JOIN classification_aliases ON classification_aliases.id = classification_trees.classification_alias_id ), child_paths( id, ancestor_ids, full_path_ids, full_path_names, link_types ) AS ( SELECT paths.id AS id, paths.ancestor_ids AS ancestor_ids, paths.full_path_ids AS full_path_ids, paths.full_path_names || classification_tree_labels.name AS full_path_names, paths.link_types AS link_types FROM paths JOIN classification_tree_labels ON classification_tree_labels.id = paths.tree_label_id WHERE paths.parent_id IS NULL UNION ALL SELECT classification_aliases.id AS id, ( classification_alias_links.parent_classification_alias_id || p1.ancestor_ids ) AS ancestors_ids, ( classification_aliases.id || p1.full_path_ids ) AS full_path_ids, ( classification_aliases.internal_name || p1.full_path_names ) AS full_path_names, ( classification_alias_links.link_type || p1.link_types ) AS link_types FROM classification_alias_links JOIN classification_aliases ON classification_aliases.id = classification_alias_links.child_classification_alias_id JOIN child_paths p1 ON p1.id = classification_alias_links.parent_classification_alias_id WHERE classification_aliases.id <> ALL (p1.full_path_ids) ), deleted_capt AS ( DELETE FROM classification_alias_paths_transitive WHERE classification_alias_paths_transitive.id IN ( SELECT capt.id FROM classification_alias_paths_transitive capt WHERE capt.full_path_ids && classification_alias_ids AND NOT EXISTS ( SELECT 1 FROM child_paths WHERE child_paths.full_path_ids = capt.full_path_ids ) ORDER BY capt.id ASC FOR UPDATE SKIP LOCKED ) ) INSERT INTO classification_alias_paths_transitive ( classification_alias_id, ancestor_ids, full_path_ids, full_path_names, link_types ) SELECT DISTINCT ON (child_paths.full_path_ids) child_paths.id, child_paths.ancestor_ids, child_paths.full_path_ids, child_paths.full_path_names, child_paths.link_types FROM child_paths ON CONFLICT ON CONSTRAINT classification_alias_paths_transitive_unique DO UPDATE SET full_path_names = EXCLUDED.full_path_names; END IF; END; $$;
+
+
+--
+-- Name: generate_ca_paths_transitive_statement_trigger_1(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.generate_ca_paths_transitive_statement_trigger_1() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$ BEGIN PERFORM generate_ca_paths_transitive ( ARRAY_AGG(DISTINCT inserted_classification_aliases.id) ) FROM ( SELECT DISTINCT new_classification_aliases.id FROM new_classification_aliases ) "inserted_classification_aliases"; RETURN NULL; END; $$;
+
+
+--
+-- Name: generate_ca_paths_transitive_statement_trigger_2(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.generate_ca_paths_transitive_statement_trigger_2() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$ BEGIN PERFORM generate_ca_paths_transitive ( ARRAY_AGG( DISTINCT inserted_classification_tree_labels.classification_alias_id ) ) FROM ( SELECT DISTINCT classification_trees.classification_alias_id FROM classification_trees WHERE classification_trees.classification_tree_label_id IN ( SELECT new_classification_tree_labels.id FROM new_classification_tree_labels ) ) "inserted_classification_tree_labels"; RETURN NULL; END; $$;
+
+
+--
+-- Name: generate_ca_paths_transitive_statement_trigger_3(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.generate_ca_paths_transitive_statement_trigger_3() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$ BEGIN PERFORM generate_ca_paths_transitive ( ARRAY_AGG( DISTINCT inserted_classification_tree_labels.classification_alias_id ) ) FROM ( SELECT DISTINCT new_classification_trees.classification_alias_id FROM new_classification_trees ) "inserted_classification_tree_labels"; RETURN NULL; END; $$;
 
 
 --
@@ -189,7 +243,7 @@ CREATE FUNCTION public.generate_ca_paths_transitive(classification_alias_ids uui
 
 CREATE FUNCTION public.generate_ca_paths_transitive_trigger_1() RETURNS trigger
     LANGUAGE plpgsql
-    AS $$ BEGIN PERFORM generate_ca_paths_transitive (ARRAY[NEW.id]::uuid[]); RETURN NEW; END; $$;
+    AS $$ BEGIN PERFORM generate_ca_paths_transitive (ARRAY [NEW.id]::uuid []); RETURN NULL; END; $$;
 
 
 --
@@ -198,7 +252,7 @@ CREATE FUNCTION public.generate_ca_paths_transitive_trigger_1() RETURNS trigger
 
 CREATE FUNCTION public.generate_ca_paths_transitive_trigger_2() RETURNS trigger
     LANGUAGE plpgsql
-    AS $$ BEGIN PERFORM generate_ca_paths_transitive (NEW.parent_classification_alias_id || ARRAY[NEW.classification_alias_id]::uuid[]); RETURN NEW; END; $$;
+    AS $$ BEGIN PERFORM generate_ca_paths_transitive (ARRAY [NEW.classification_alias_id]::uuid []); RETURN NULL; END; $$;
 
 
 --
@@ -216,7 +270,7 @@ CREATE FUNCTION public.generate_ca_paths_transitive_trigger_3() RETURNS trigger
 
 CREATE FUNCTION public.generate_ca_paths_transitive_trigger_4() RETURNS trigger
     LANGUAGE plpgsql
-    AS $$ BEGIN PERFORM generate_ca_paths_transitive (ARRAY[NEW.classification_alias_id]::uuid[]); RETURN NEW; END; $$;
+    AS $$ BEGIN PERFORM generate_ca_paths_transitive ( ARRAY_AGG( DISTINCT inserted_classification_groups.classification_alias_id ) ) FROM ( SELECT DISTINCT new_classification_groups.classification_alias_id FROM new_classification_groups ) "inserted_classification_groups"; RETURN NULL; END; $$;
 
 
 --
@@ -225,7 +279,7 @@ CREATE FUNCTION public.generate_ca_paths_transitive_trigger_4() RETURNS trigger
 
 CREATE FUNCTION public.generate_ccc_relations_transitive_trigger_1() RETURNS trigger
     LANGUAGE plpgsql
-    AS $$ BEGIN PERFORM generate_collected_cl_content_relations_transitive (ARRAY_AGG(content_data_id), ARRAY[]::uuid[]) FROM ( SELECT DISTINCT classification_contents.content_data_id FROM new_classification_alias_paths_transitive INNER JOIN classification_groups ON classification_groups.classification_alias_id = ANY (new_classification_alias_paths_transitive.full_path_ids) AND classification_groups.deleted_at IS NULL INNER JOIN classification_contents ON classification_contents.classification_id = classification_groups.classification_id) "collected_classification_content_relations_alias"; RETURN NULL; END; $$;
+    AS $$ BEGIN PERFORM generate_collected_cl_content_relations_transitive ( array_agg( collected_classification_content_relations_alias.content_data_id ) ) FROM ( SELECT DISTINCT classification_contents.content_data_id FROM new_classification_alias_paths_transitive INNER JOIN classification_groups ON classification_groups.classification_alias_id = ANY ( new_classification_alias_paths_transitive.full_path_ids ) AND classification_groups.deleted_at IS NULL INNER JOIN classification_contents ON classification_contents.classification_id = classification_groups.classification_id ) "collected_classification_content_relations_alias"; RETURN NULL; END; $$;
 
 
 --
@@ -234,7 +288,7 @@ CREATE FUNCTION public.generate_ccc_relations_transitive_trigger_1() RETURNS tri
 
 CREATE FUNCTION public.generate_ccc_relations_transitive_trigger_2() RETURNS trigger
     LANGUAGE plpgsql
-    AS $$ BEGIN PERFORM generate_collected_cl_content_relations_transitive (ARRAY[NEW.content_data_id]::uuid[], ARRAY[]::uuid[]); RETURN NEW; END; $$;
+    AS $$ BEGIN PERFORM generate_collected_cl_content_relations_transitive (ARRAY [NEW.content_data_id]::UUID []); RETURN NULL; END; $$;
 
 
 --
@@ -274,12 +328,49 @@ CREATE FUNCTION public.generate_classification_alias_paths_trigger_3() RETURNS t
 
 
 --
+-- Name: generate_collected_cl_content_relations_transitive(uuid[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.generate_collected_cl_content_relations_transitive(thing_ids uuid[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$ BEGIN IF array_length(thing_ids, 1) > 0 THEN WITH direct_classification_content_relations AS ( SELECT DISTINCT ON ( classification_contents.content_data_id, classification_aliases.id ) classification_contents.content_data_id "thing_id", classification_aliases.id "classification_alias_id", classification_trees.classification_tree_label_id, TRUE "direct" FROM classification_contents JOIN classification_groups ON classification_contents.classification_id = classification_groups.classification_id AND classification_groups.deleted_at IS NULL JOIN classification_aliases ON classification_aliases.id = classification_groups.classification_alias_id JOIN classification_trees ON classification_trees.classification_alias_id = classification_aliases.id AND classification_trees.deleted_at IS NULL WHERE classification_contents.content_data_id = ANY(thing_ids) ), full_classification_content_relations AS ( SELECT DISTINCT ON (classification_contents.content_data_id, a.e) classification_contents.content_data_id "thing_id", a.e "classification_alias_id", classification_trees.classification_tree_label_id, FALSE "direct" FROM classification_contents JOIN classification_groups ON classification_contents.classification_id = classification_groups.classification_id AND classification_groups.deleted_at IS NULL JOIN classification_alias_paths_transitive ON classification_groups.classification_alias_id = classification_alias_paths_transitive.classification_alias_id JOIN classification_trees ON classification_trees.classification_alias_id = ANY ( classification_alias_paths_transitive.full_path_ids ) AND classification_trees.deleted_at IS NULL INNER JOIN LATERAL UNNEST( classification_alias_paths_transitive.full_path_ids ) AS a (e) ON a.e = classification_trees.classification_alias_id WHERE classification_contents.content_data_id = ANY(thing_ids) AND NOT EXISTS ( SELECT 1 FROM direct_classification_content_relations dccr WHERE dccr.thing_id = classification_contents.content_data_id AND dccr.classification_alias_id = a.e ) ), new_collected_classification_contents AS ( SELECT direct_classification_content_relations.thing_id, direct_classification_content_relations.classification_alias_id, direct_classification_content_relations.classification_tree_label_id, direct_classification_content_relations.direct FROM direct_classification_content_relations UNION SELECT full_classification_content_relations.thing_id, full_classification_content_relations.classification_alias_id, full_classification_content_relations.classification_tree_label_id, full_classification_content_relations.direct FROM full_classification_content_relations ), deleted_collected_classification_contents AS ( DELETE FROM collected_classification_contents WHERE collected_classification_contents.id IN ( SELECT ccc.id FROM collected_classification_contents ccc WHERE ccc.thing_id = ANY(thing_ids) AND NOT EXISTS ( SELECT 1 FROM new_collected_classification_contents WHERE new_collected_classification_contents.thing_id = ccc.thing_id AND new_collected_classification_contents.classification_alias_id = ccc.classification_alias_id ) ORDER BY ccc.id ASC FOR UPDATE SKIP LOCKED ) ) INSERT INTO collected_classification_contents ( thing_id, classification_alias_id, classification_tree_label_id, direct ) SELECT new_collected_classification_contents.thing_id, new_collected_classification_contents.classification_alias_id, new_collected_classification_contents.classification_tree_label_id, new_collected_classification_contents.direct FROM new_collected_classification_contents ON CONFLICT (thing_id, classification_alias_id) DO UPDATE SET classification_tree_label_id = EXCLUDED.classification_tree_label_id, direct = EXCLUDED.direct; END IF; END; $$;
+
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- Name: classification_contents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.classification_contents (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    content_data_id uuid,
+    classification_id uuid,
+    seen_at timestamp without time zone,
+    created_at timestamp without time zone DEFAULT transaction_timestamp() NOT NULL,
+    updated_at timestamp without time zone DEFAULT transaction_timestamp() NOT NULL,
+    relation character varying
+);
+
+
+--
+-- Name: generate_collected_cl_content_relations_transitive(public.classification_contents); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.generate_collected_cl_content_relations_transitive(public.classification_contents) RETURNS void
+    LANGUAGE sql
+    AS $_$ DELETE FROM collected_classification_contents WHERE collected_classification_contents.thing_id IN ( SELECT ccc.thing_id FROM collected_classification_contents ccc WHERE ccc.thing_id = $1.content_data_id ORDER BY ccc.thing_id ASC FOR UPDATE SKIP LOCKED ); WITH direct_classification_content_relations AS ( SELECT DISTINCT ON ( classification_contents.content_data_id, classification_aliases.id ) classification_contents.content_data_id "thing_id", classification_aliases.id "classification_alias_id", classification_trees.classification_tree_label_id, TRUE "direct" FROM classification_contents JOIN classification_groups ON classification_contents.classification_id = classification_groups.classification_id AND classification_groups.deleted_at IS NULL JOIN classification_aliases ON classification_aliases.id = classification_groups.classification_alias_id JOIN classification_trees ON classification_trees.classification_alias_id = classification_aliases.id AND classification_trees.deleted_at IS NULL WHERE classification_contents.content_data_id = $1.content_data_id ), full_classification_content_relations AS ( SELECT DISTINCT ON (classification_contents.content_data_id, a.e) classification_contents.content_data_id "thing_id", a.e "classification_alias_id", classification_trees.classification_tree_label_id, FALSE "direct" FROM classification_contents JOIN classification_groups ON classification_contents.classification_id = classification_groups.classification_id AND classification_groups.deleted_at IS NULL JOIN classification_alias_paths_transitive ON classification_groups.classification_alias_id = classification_alias_paths_transitive.classification_alias_id JOIN classification_trees ON classification_trees.classification_alias_id = ANY ( classification_alias_paths_transitive.full_path_ids ) AND classification_trees.deleted_at IS NULL INNER JOIN LATERAL UNNEST( classification_alias_paths_transitive.full_path_ids ) AS a (e) ON a.e = classification_trees.classification_alias_id WHERE classification_contents.content_data_id = $1.content_data_id AND NOT EXISTS ( SELECT 1 FROM direct_classification_content_relations dccr WHERE dccr.thing_id = classification_contents.content_data_id AND dccr.classification_alias_id = a.e ) ) INSERT INTO collected_classification_contents ( thing_id, classification_alias_id, classification_tree_label_id, direct ) SELECT direct_classification_content_relations.thing_id, direct_classification_content_relations.classification_alias_id, direct_classification_content_relations.classification_tree_label_id, direct_classification_content_relations.direct FROM direct_classification_content_relations UNION SELECT full_classification_content_relations.thing_id, full_classification_content_relations.classification_alias_id, full_classification_content_relations.classification_tree_label_id, full_classification_content_relations.direct FROM full_classification_content_relations ON CONFLICT DO NOTHING; $_$;
+
+
+--
 -- Name: generate_collected_cl_content_relations_transitive(uuid[], uuid[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.generate_collected_cl_content_relations_transitive(content_ids uuid[], excluded_classification_ids uuid[]) RETURNS void
     LANGUAGE plpgsql
-    AS $$ BEGIN DELETE FROM collected_classification_contents WHERE thing_id IN ( SELECT cccr.thing_id FROM collected_classification_contents cccr WHERE cccr.thing_id = ANY (content_ids) ORDER BY cccr.thing_id ASC FOR UPDATE SKIP LOCKED ); WITH direct_classification_content_relations AS ( SELECT classification_contents.content_data_id "thing_id", ARRAY_AGG(DISTINCT classification_groups.classification_alias_id) "direct_alias_ids", ARRAY_AGG(DISTINCT classification_trees.classification_tree_label_id) "direct_tree_label_ids" FROM classification_contents JOIN classification_groups ON classification_contents.classification_id = classification_groups.classification_id AND classification_groups.deleted_at IS NULL JOIN classification_trees ON classification_trees.classification_alias_id = classification_groups.classification_alias_id AND classification_trees.deleted_at IS NULL WHERE classification_contents.content_data_id = ANY (content_ids) AND classification_contents.classification_id <> ALL (excluded_classification_ids) GROUP BY classification_contents.content_data_id ), full_classification_content_relations AS ( SELECT classification_contents.content_data_id "thing_id", ARRAY_AGG(DISTINCT a.e) "full_alias_ids", ARRAY_AGG(DISTINCT classification_trees.classification_tree_label_id) "full_tree_label_ids" FROM classification_contents JOIN classification_groups ON classification_contents.classification_id = classification_groups.classification_id AND classification_groups.deleted_at IS NULL JOIN classification_alias_paths_transitive ON classification_groups.classification_alias_id = classification_alias_paths_transitive.classification_alias_id JOIN classification_trees ON classification_trees.classification_alias_id = ANY (classification_alias_paths_transitive.full_path_ids) AND classification_trees.deleted_at IS NULL CROSS JOIN LATERAL UNNEST(classification_alias_paths_transitive.full_path_ids) AS a (e) WHERE classification_contents.content_data_id = ANY (content_ids) AND classification_contents.classification_id <> ALL (excluded_classification_ids) GROUP BY classification_contents.content_data_id ) INSERT INTO collected_classification_contents (thing_id, direct_classification_alias_ids, full_classification_alias_ids, direct_tree_label_ids, full_tree_label_ids) SELECT direct_classification_content_relations.thing_id, direct_classification_content_relations.direct_alias_ids, full_classification_content_relations.full_alias_ids, direct_classification_content_relations.direct_tree_label_ids, full_classification_content_relations.full_tree_label_ids FROM direct_classification_content_relations JOIN full_classification_content_relations ON full_classification_content_relations.thing_id = direct_classification_content_relations.thing_id ON CONFLICT (thing_id) DO UPDATE SET direct_classification_alias_ids = EXCLUDED.direct_classification_alias_ids, full_classification_alias_ids = EXCLUDED.full_classification_alias_ids, direct_tree_label_ids = EXCLUDED.direct_tree_label_ids, full_tree_label_ids = EXCLUDED.full_tree_label_ids; RETURN; END; $$;
+    AS $$ BEGIN DELETE FROM collected_classification_contents WHERE thing_id IN ( SELECT cccr.thing_id FROM collected_classification_contents cccr WHERE cccr.thing_id = ANY (content_ids) ORDER BY cccr.thing_id ASC FOR UPDATE SKIP LOCKED ); WITH direct_classification_content_relations AS ( SELECT DISTINCT ON ( classification_contents.content_data_id, classification_aliases.id ) classification_contents.content_data_id "thing_id", classification_aliases.id "classification_alias_id", classification_trees.classification_tree_label_id, TRUE "direct" FROM classification_contents JOIN classification_groups ON classification_contents.classification_id = classification_groups.classification_id AND classification_groups.deleted_at IS NULL JOIN classification_aliases ON classification_aliases.id = classification_groups.classification_alias_id JOIN classification_trees ON classification_trees.classification_alias_id = classification_aliases.id AND classification_trees.deleted_at IS NULL WHERE classification_contents.content_data_id = ANY (content_ids) AND classification_contents.classification_id <> ALL (excluded_classification_ids) ), full_classification_content_relations AS ( SELECT DISTINCT ON (classification_contents.content_data_id, a.e) classification_contents.content_data_id "thing_id", a.e "classification_alias_id", classification_trees.classification_tree_label_id, FALSE "direct" FROM classification_contents JOIN classification_groups ON classification_contents.classification_id = classification_groups.classification_id AND classification_groups.deleted_at IS NULL JOIN classification_alias_paths_transitive ON classification_groups.classification_alias_id = classification_alias_paths_transitive.classification_alias_id JOIN classification_trees ON classification_trees.classification_alias_id = ANY ( classification_alias_paths_transitive.full_path_ids ) AND classification_trees.deleted_at IS NULL INNER JOIN LATERAL UNNEST( classification_alias_paths_transitive.full_path_ids ) AS a (e) ON a.e = classification_trees.classification_alias_id WHERE classification_contents.content_data_id = ANY (content_ids) AND classification_contents.classification_id <> ALL (excluded_classification_ids) AND NOT EXISTS ( SELECT 1 FROM direct_classification_content_relations dccr WHERE dccr.thing_id = classification_contents.content_data_id AND dccr.classification_alias_id = a.e ) ) INSERT INTO collected_classification_contents ( thing_id, classification_alias_id, classification_tree_label_id, direct ) SELECT direct_classification_content_relations.thing_id, direct_classification_content_relations.classification_alias_id, direct_classification_content_relations.classification_tree_label_id, direct_classification_content_relations.direct FROM direct_classification_content_relations UNION SELECT full_classification_content_relations.thing_id, full_classification_content_relations.classification_alias_id, full_classification_content_relations.classification_tree_label_id, full_classification_content_relations.direct FROM full_classification_content_relations ON CONFLICT DO NOTHING; RETURN; END; $$;
 
 
 --
@@ -288,7 +379,7 @@ CREATE FUNCTION public.generate_collected_cl_content_relations_transitive(conten
 
 CREATE FUNCTION public.generate_collected_classification_content_relations(content_ids uuid[], excluded_classification_ids uuid[]) RETURNS void
     LANGUAGE plpgsql
-    AS $$ BEGIN DELETE FROM collected_classification_contents WHERE thing_id IN ( SELECT cccr.thing_id FROM collected_classification_contents cccr WHERE cccr.thing_id = ANY (content_ids) ORDER BY cccr.thing_id ASC FOR UPDATE SKIP LOCKED ); WITH direct_classification_content_relations AS ( SELECT classification_contents.content_data_id "thing_id", ARRAY_AGG(DISTINCT classification_groups.classification_alias_id) "direct_alias_ids", ARRAY_AGG(DISTINCT classification_trees.classification_tree_label_id) "direct_tree_label_ids" FROM classification_contents JOIN classification_groups ON classification_contents.classification_id = classification_groups.classification_id AND classification_groups.deleted_at IS NULL JOIN classification_trees ON classification_trees.classification_alias_id = classification_groups.classification_alias_id AND classification_trees.deleted_at IS NULL WHERE classification_contents.content_data_id = ANY (content_ids) AND classification_contents.classification_id <> ALL (excluded_classification_ids) GROUP BY classification_contents.content_data_id ), full_classification_content_relations AS ( SELECT classification_contents.content_data_id "thing_id", ARRAY_AGG(DISTINCT a.e) "full_alias_ids", ARRAY_AGG(DISTINCT classification_trees.classification_tree_label_id) "full_tree_label_ids" FROM classification_contents JOIN classification_groups ON classification_contents.classification_id = classification_groups.classification_id AND classification_groups.deleted_at IS NULL JOIN classification_alias_paths ON classification_groups.classification_alias_id = classification_alias_paths.id JOIN classification_trees ON classification_trees.classification_alias_id = ANY (classification_alias_paths.full_path_ids) AND classification_trees.deleted_at IS NULL CROSS JOIN LATERAL UNNEST(classification_alias_paths.full_path_ids) AS a (e) WHERE classification_contents.content_data_id = ANY (content_ids) AND classification_contents.classification_id <> ALL (excluded_classification_ids) GROUP BY classification_contents.content_data_id ) INSERT INTO collected_classification_contents (thing_id, direct_classification_alias_ids, full_classification_alias_ids, direct_tree_label_ids, full_tree_label_ids) SELECT direct_classification_content_relations.thing_id, direct_classification_content_relations.direct_alias_ids, full_classification_content_relations.full_alias_ids, direct_classification_content_relations.direct_tree_label_ids, full_classification_content_relations.full_tree_label_ids FROM direct_classification_content_relations JOIN full_classification_content_relations ON full_classification_content_relations.thing_id = direct_classification_content_relations.thing_id ON CONFLICT (thing_id) DO UPDATE SET direct_classification_alias_ids = EXCLUDED.direct_classification_alias_ids, full_classification_alias_ids = EXCLUDED.full_classification_alias_ids, direct_tree_label_ids = EXCLUDED.direct_tree_label_ids, full_tree_label_ids = EXCLUDED.full_tree_label_ids; RETURN; END; $$;
+    AS $$ BEGIN DELETE FROM collected_classification_contents WHERE thing_id IN ( SELECT cccr.thing_id FROM collected_classification_contents cccr WHERE cccr.thing_id = ANY (content_ids) ORDER BY cccr.thing_id ASC FOR UPDATE SKIP LOCKED ); WITH direct_classification_content_relations AS ( SELECT DISTINCT ON ( classification_contents.content_data_id, classification_groups.classification_alias_id ) classification_contents.content_data_id "thing_id", classification_groups.classification_alias_id, classification_trees.classification_tree_label_id, TRUE "direct" FROM classification_contents JOIN classification_groups ON classification_contents.classification_id = classification_groups.classification_id AND classification_groups.deleted_at IS NULL JOIN classification_trees ON classification_trees.classification_alias_id = classification_groups.classification_alias_id AND classification_trees.deleted_at IS NULL WHERE classification_contents.content_data_id = ANY (content_ids) AND classification_contents.classification_id <> ALL (excluded_classification_ids) ), full_classification_content_relations AS ( SELECT DISTINCT ON (classification_contents.content_data_id, a.e) classification_contents.content_data_id "thing_id", a.e "classification_alias_id", classification_trees.classification_tree_label_id "classification_tree_label_id", FALSE "direct" FROM classification_contents JOIN classification_groups ON classification_contents.classification_id = classification_groups.classification_id AND classification_groups.deleted_at IS NULL JOIN classification_alias_paths ON classification_groups.classification_alias_id = classification_alias_paths.id JOIN classification_trees ON classification_trees.classification_alias_id = ANY (classification_alias_paths.full_path_ids) AND classification_trees.deleted_at IS NULL CROSS JOIN LATERAL UNNEST(classification_alias_paths.full_path_ids) AS a (e) WHERE classification_contents.content_data_id = ANY (content_ids) AND classification_contents.classification_id <> ALL (excluded_classification_ids) AND NOT EXISTS ( SELECT 1 FROM direct_classification_content_relations dccr WHERE dccr.thing_id = classification_contents.content_data_id AND dccr.classification_alias_id = a.e ) ) INSERT INTO collected_classification_contents ( thing_id, classification_alias_id, classification_tree_label_id, direct ) SELECT direct_classification_content_relations.thing_id, direct_classification_content_relations.classification_alias_id, direct_classification_content_relations.classification_tree_label_id, direct_classification_content_relations.direct FROM direct_classification_content_relations UNION SELECT full_classification_content_relations.thing_id, full_classification_content_relations.classification_alias_id, full_classification_content_relations.classification_tree_label_id, full_classification_content_relations.direct FROM full_classification_content_relations ON CONFLICT DO NOTHING; RETURN; END; $$;
 
 
 --
@@ -325,6 +416,15 @@ CREATE FUNCTION public.generate_collected_classification_content_relations_trigg
 CREATE FUNCTION public.generate_collected_classification_content_relations_trigger_4() RETURNS trigger
     LANGUAGE plpgsql
     AS $$ BEGIN PERFORM generate_collected_classification_content_relations ( (SELECT ARRAY_AGG(DISTINCT things.id) FROM things JOIN classification_contents ON things.id = classification_contents.content_data_id JOIN classification_groups ON classification_contents.classification_id = classification_groups.classification_id AND classification_groups.deleted_at IS NULL WHERE classification_groups.classification_id = NEW.classification_id), ARRAY[]::uuid[]); RETURN NEW; END; $$;
+
+
+--
+-- Name: generate_collected_classification_content_relations_trigger_5(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.generate_collected_classification_content_relations_trigger_5() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$ BEGIN PERFORM generate_collected_classification_content_relations (ARRAY_AGG(content_data_id), ARRAY []::uuid []) FROM ( SELECT DISTINCT classification_contents.content_data_id FROM new_classification_alias_paths INNER JOIN classification_groups ON classification_groups.classification_alias_id = ANY ( new_classification_alias_paths.full_path_ids ) AND classification_groups.deleted_at IS NULL INNER JOIN classification_contents ON classification_contents.classification_id = classification_groups.classification_id ) "collected_classification_content_relations_alias"; RETURN NULL; END; $$;
 
 
 --
@@ -427,6 +527,24 @@ CREATE FUNCTION public.get_dict(lang character varying) RETURNS regconfig
 
 
 --
+-- Name: insert_classification_trees_order_a_trigger(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.insert_classification_trees_order_a_trigger() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$ BEGIN PERFORM reset_classification_aliases_order_a(ARRAY_AGG(classification_alias_id)) FROM ( SELECT new_classification_trees.classification_alias_id FROM new_classification_trees ) "reset_classification_trees_alias"; PERFORM update_classification_aliases_order_a (ARRAY_AGG(classification_tree_label_id)) FROM ( SELECT DISTINCT new_classification_trees.classification_tree_label_id FROM new_classification_trees ) "new_classification_trees_alias"; RETURN NULL; END; $$;
+
+
+--
+-- Name: reset_classification_aliases_order_a(uuid[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.reset_classification_aliases_order_a(classification_alias_ids uuid[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$ BEGIN IF array_length(classification_alias_ids, 1) > 0 THEN UPDATE classification_aliases SET order_a = NULL WHERE classification_aliases.order_a IS NOT NULL AND classification_aliases.id = ANY(classification_alias_ids); END IF; END; $$;
+
+
+--
 -- Name: to_classification_content_history(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -490,7 +608,7 @@ CREATE FUNCTION public.tsvectorsearchupdate() RETURNS trigger
 
 CREATE FUNCTION public.update_ca_paths_transitive_trigger_4() RETURNS trigger
     LANGUAGE plpgsql
-    AS $$ BEGIN PERFORM generate_ca_paths_transitive ( ARRAY [OLD.classification_alias_id, NEW.classification_alias_id]::uuid [] ); RETURN NEW; END; $$;
+    AS $$ BEGIN PERFORM generate_ca_paths_transitive ( ARRAY_AGG( updated_classification_groups.classification_alias_id ) ) FROM ( SELECT DISTINCT old_classification_groups.classification_alias_id FROM old_classification_groups INNER JOIN new_classification_groups ON old_classification_groups.id = new_classification_groups.id WHERE old_classification_groups.classification_id IS DISTINCT FROM new_classification_groups.classification_id OR old_classification_groups.classification_alias_id IS DISTINCT FROM new_classification_groups.classification_alias_id UNION SELECT DISTINCT new_classification_groups.classification_alias_id FROM old_classification_groups INNER JOIN new_classification_groups ON old_classification_groups.id = new_classification_groups.id WHERE old_classification_groups.classification_id IS DISTINCT FROM new_classification_groups.classification_id OR old_classification_groups.classification_alias_id IS DISTINCT FROM new_classification_groups.classification_alias_id ) "updated_classification_groups"; RETURN NULL; END; $$;
 
 
 --
@@ -499,7 +617,7 @@ CREATE FUNCTION public.update_ca_paths_transitive_trigger_4() RETURNS trigger
 
 CREATE FUNCTION public.update_classification_aliases_order_a(tree_label_ids uuid[]) RETURNS void
     LANGUAGE plpgsql
-    AS $$ BEGIN UPDATE classification_aliases SET order_a = w.order_a FROM ( WITH RECURSIVE paths (id, updated_at, full_order_a, tree_label_id) AS ( SELECT classification_aliases.id, classification_aliases.updated_at, ARRAY[ ( ROW_NUMBER() OVER ( PARTITION BY classification_trees.classification_tree_label_id ORDER BY classification_aliases.order_a ASC, classification_aliases.updated_at ASC ) ) ], classification_trees.classification_tree_label_id FROM classification_trees JOIN classification_aliases ON classification_aliases.id = classification_trees.classification_alias_id AND classification_aliases.deleted_at IS NULL WHERE classification_trees.parent_classification_alias_id IS NULL AND classification_trees.deleted_at IS NULL AND classification_trees.classification_tree_label_id = ANY (tree_label_ids) UNION SELECT classification_trees.classification_alias_id, classification_aliases.updated_at, paths.full_order_a || ( ROW_NUMBER() OVER ( PARTITION BY classification_trees.classification_tree_label_id ORDER BY paths.full_order_a || classification_aliases.order_a::BIGINT ASC, classification_aliases.updated_at ASC ) ), classification_trees.classification_tree_label_id FROM classification_trees JOIN paths ON paths.id = classification_trees.parent_classification_alias_id JOIN classification_aliases ON classification_aliases.id = classification_trees.classification_alias_id AND classification_aliases.deleted_at IS NULL WHERE classification_trees.deleted_at IS NULL ) SELECT paths.id, ( ROW_NUMBER() OVER ( PARTITION BY classification_tree_labels.id ORDER BY paths.full_order_a ASC, paths.updated_at ASC ) ) AS order_a FROM paths JOIN classification_tree_labels ON classification_tree_labels.id = paths.tree_label_id ) w WHERE w.id = classification_aliases.id; END; $$;
+    AS $$ BEGIN IF array_length(tree_label_ids, 1) > 0 THEN UPDATE classification_aliases SET order_a = w.order_a FROM ( WITH RECURSIVE paths (id, updated_at, full_order_a, tree_label_id) AS ( SELECT classification_aliases.id, classification_aliases.updated_at, ARRAY [ ( ROW_NUMBER() OVER ( PARTITION BY classification_trees.classification_tree_label_id ORDER BY classification_aliases.order_a ASC, classification_aliases.updated_at ASC ) ) ], classification_trees.classification_tree_label_id FROM classification_trees JOIN classification_aliases ON classification_aliases.id = classification_trees.classification_alias_id AND classification_aliases.deleted_at IS NULL WHERE classification_trees.parent_classification_alias_id IS NULL AND classification_trees.deleted_at IS NULL AND classification_trees.classification_tree_label_id = ANY (tree_label_ids) UNION SELECT classification_trees.classification_alias_id, classification_aliases.updated_at, paths.full_order_a || ( ROW_NUMBER() OVER ( PARTITION BY classification_trees.classification_tree_label_id ORDER BY paths.full_order_a || classification_aliases.order_a::BIGINT ASC, classification_aliases.updated_at ASC ) ), classification_trees.classification_tree_label_id FROM classification_trees JOIN paths ON paths.id = classification_trees.parent_classification_alias_id JOIN classification_aliases ON classification_aliases.id = classification_trees.classification_alias_id AND classification_aliases.deleted_at IS NULL WHERE classification_trees.deleted_at IS NULL ) SELECT paths.id, ( ROW_NUMBER() OVER ( PARTITION BY classification_tree_labels.id ORDER BY paths.full_order_a ASC, paths.updated_at ASC ) ) AS order_a FROM paths JOIN classification_tree_labels ON classification_tree_labels.id = paths.tree_label_id ) w WHERE w.id = classification_aliases.id AND classification_aliases.order_a IS DISTINCT FROM w.order_a; END IF; END; $$;
 
 
 --
@@ -508,7 +626,16 @@ CREATE FUNCTION public.update_classification_aliases_order_a(tree_label_ids uuid
 
 CREATE FUNCTION public.update_classification_aliases_order_a_trigger() RETURNS trigger
     LANGUAGE plpgsql
-    AS $$ BEGIN PERFORM update_classification_aliases_order_a (ARRAY_AGG(classification_tree_label_id)) FROM ( SELECT DISTINCT classification_trees.classification_tree_label_id FROM classification_trees WHERE classification_trees.classification_alias_id = NEW.id ) "updated_classification_aliases_alias"; RETURN NEW; END; $$;
+    AS $$ BEGIN PERFORM update_classification_aliases_order_a (ARRAY_AGG(classification_tree_label_id)) FROM ( SELECT DISTINCT classification_trees.classification_tree_label_id FROM classification_trees WHERE classification_trees.classification_alias_id IN ( SELECT updated_classification_aliases.id FROM updated_classification_aliases INNER JOIN old_classification_aliases ON old_classification_aliases.id = updated_classification_aliases.id WHERE old_classification_aliases.order_a IS DISTINCT FROM updated_classification_aliases.order_a AND updated_classification_aliases.order_a IS NOT NULL ) ) "updated_classification_aliases_alias"; RETURN NULL; END; $$;
+
+
+--
+-- Name: update_classification_tree_tree_label_id(uuid[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.update_classification_tree_tree_label_id(classification_tree_ids uuid[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$ BEGIN IF array_length(classification_tree_ids, 1) > 0 THEN UPDATE classification_trees SET classification_tree_label_id = updated_classification_trees.classification_tree_label_id FROM ( SELECT new_classification_trees.id, classification_trees.classification_tree_label_id FROM classification_trees INNER JOIN classification_alias_paths ON classification_alias_paths.ancestor_ids @> ARRAY [classification_trees.classification_alias_id]::UUID [] INNER JOIN classification_trees new_classification_trees ON classification_alias_paths.id = new_classification_trees.classification_alias_id WHERE classification_trees.deleted_at IS NULL AND classification_trees.id = ANY(classification_tree_ids) ) updated_classification_trees WHERE updated_classification_trees.id = classification_trees.id; END IF; END; $$;
 
 
 --
@@ -517,7 +644,7 @@ CREATE FUNCTION public.update_classification_aliases_order_a_trigger() RETURNS t
 
 CREATE FUNCTION public.update_classification_tree_tree_label_id_trigger() RETURNS trigger
     LANGUAGE plpgsql
-    AS $$ BEGIN UPDATE classification_trees SET classification_tree_label_id = NEW.classification_tree_label_id WHERE classification_trees.classification_alias_id IN ( SELECT classification_alias_paths.id FROM classification_alias_paths WHERE classification_alias_paths.ancestor_ids @> ARRAY[NEW.classification_alias_id]::UUID[] ); RETURN NEW; END; $$;
+    AS $$ BEGIN PERFORM update_classification_tree_tree_label_id (ARRAY_AGG(id)) FROM ( SELECT new_classification_trees.id FROM new_classification_trees INNER JOIN old_classification_trees ON old_classification_trees.id = new_classification_trees.id WHERE new_classification_trees.deleted_at IS NULL AND new_classification_trees.classification_tree_label_id IS DISTINCT FROM old_classification_trees.classification_tree_label_id ) updated_classification_trees; RETURN NULL; END; $$;
 
 
 --
@@ -526,7 +653,7 @@ CREATE FUNCTION public.update_classification_tree_tree_label_id_trigger() RETURN
 
 CREATE FUNCTION public.update_classification_trees_order_a_trigger() RETURNS trigger
     LANGUAGE plpgsql
-    AS $$ BEGIN UPDATE classification_aliases SET order_a = NULL WHERE classification_aliases.id = NEW.classification_alias_id AND classification_aliases.order_a IS NOT NULL; PERFORM update_classification_aliases_order_a (ARRAY[OLD.classification_tree_label_id, NEW.classification_tree_label_id]::UUID[]); RETURN NEW; END; $$;
+    AS $$ BEGIN PERFORM reset_classification_aliases_order_a(ARRAY_AGG(classification_alias_id)) FROM ( SELECT new_classification_trees.classification_alias_id FROM new_classification_trees INNER JOIN old_classification_trees ON old_classification_trees.id = new_classification_trees.id WHERE new_classification_trees.deleted_at IS NULL AND ( new_classification_trees.parent_classification_alias_id IS DISTINCT FROM old_classification_trees.parent_classification_alias_id OR new_classification_trees.classification_tree_label_id IS DISTINCT FROM old_classification_trees.classification_tree_label_id ) ) "reset_classification_trees_alias"; PERFORM update_classification_aliases_order_a (ARRAY_AGG(classification_tree_label_id)) FROM ( SELECT DISTINCT new_classification_trees.classification_tree_label_id FROM new_classification_trees INNER JOIN old_classification_trees ON old_classification_trees.id = new_classification_trees.id INNER JOIN classification_aliases ON classification_aliases.id = new_classification_trees.id AND classification_aliases.deleted_at IS NULL WHERE new_classification_trees.deleted_at IS NULL AND ( new_classification_trees.parent_classification_alias_id IS DISTINCT FROM old_classification_trees.parent_classification_alias_id OR new_classification_trees.classification_tree_label_id IS DISTINCT FROM old_classification_trees.classification_tree_label_id ) ) "updated_classification_trees_alias"; RETURN NULL; END; $$;
 
 
 --
@@ -544,12 +671,8 @@ CREATE FUNCTION public.update_collected_classification_content_relations_trigger
 
 CREATE FUNCTION public.update_template_definitions_trigger() RETURNS trigger
     LANGUAGE plpgsql
-    AS $$ BEGIN UPDATE things SET "schema" = NEW.schema, boost = (NEW.schema -> 'boost')::numeric, content_type = NEW.schema ->> 'content_type', cache_valid_since = NOW() WHERE things.template_name = NEW.template_name AND things.template = FALSE; RETURN new; END; $$;
+    AS $$ BEGIN UPDATE things SET boost = updated_thing_templates.boost, content_type = updated_thing_templates.content_type, cache_valid_since = NOW() FROM ( SELECT DISTINCT ON (new_thing_templates.template_name) new_thing_templates.template_name, ("new_thing_templates"."schema"->'boost')::numeric AS boost, "new_thing_templates"."schema"->>'content_type' AS content_type FROM new_thing_templates INNER JOIN old_thing_templates ON old_thing_templates.template_name = new_thing_templates.template_name WHERE "new_thing_templates"."schema" IS DISTINCT FROM "old_thing_templates"."schema" ) "updated_thing_templates" WHERE things.template_name = updated_thing_templates.template_name; RETURN NULL; END; $$;
 
-
-SET default_tablespace = '';
-
-SET default_table_access_method = heap;
 
 --
 -- Name: active_storage_attachments; Type: TABLE; Schema: public; Owner: -
@@ -698,8 +821,8 @@ CREATE TABLE public.classification_trees (
 
 CREATE VIEW public.classification_alias_links AS
  WITH primary_classification_groups AS (
-         SELECT DISTINCT classification_groups.classification_alias_id,
-            first_value(classification_groups.classification_id) OVER (PARTITION BY classification_groups.classification_alias_id ORDER BY classification_groups.created_at) AS classification_id
+         SELECT DISTINCT classification_groups.classification_id,
+            first_value(classification_groups.classification_alias_id) OVER (PARTITION BY classification_groups.classification_id ORDER BY classification_groups.created_at) AS classification_alias_id
            FROM public.classification_groups
           WHERE (classification_groups.deleted_at IS NULL)
         )
@@ -753,14 +876,15 @@ CREATE TABLE public.classification_aliases (
     created_at timestamp without time zone DEFAULT transaction_timestamp() NOT NULL,
     updated_at timestamp without time zone DEFAULT transaction_timestamp() NOT NULL,
     external_source_id uuid,
-    internal boolean DEFAULT false,
+    internal boolean DEFAULT false NOT NULL,
     deleted_at timestamp without time zone,
-    assignable boolean DEFAULT true,
+    assignable boolean DEFAULT true NOT NULL,
     name_i18n jsonb DEFAULT '{}'::jsonb,
     description_i18n jsonb DEFAULT '{}'::jsonb,
     uri character varying,
     order_a integer,
-    ui_configs jsonb
+    ui_configs jsonb,
+    external_key character varying
 );
 
 
@@ -771,21 +895,6 @@ CREATE TABLE public.classification_aliases (
 CREATE TABLE public.classification_content_histories (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     content_data_history_id uuid,
-    classification_id uuid,
-    seen_at timestamp without time zone,
-    created_at timestamp without time zone DEFAULT transaction_timestamp() NOT NULL,
-    updated_at timestamp without time zone DEFAULT transaction_timestamp() NOT NULL,
-    relation character varying
-);
-
-
---
--- Name: classification_contents; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.classification_contents (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    content_data_id uuid,
     classification_id uuid,
     seen_at timestamp without time zone,
     created_at timestamp without time zone DEFAULT transaction_timestamp() NOT NULL,
@@ -820,7 +929,7 @@ CREATE TABLE public.classification_tree_labels (
     seen_at timestamp without time zone,
     created_at timestamp without time zone NOT NULL,
     updated_at timestamp without time zone NOT NULL,
-    internal boolean DEFAULT false,
+    internal boolean DEFAULT false NOT NULL,
     deleted_at timestamp without time zone,
     visibility character varying[] DEFAULT '{}'::character varying[],
     change_behaviour character varying[] DEFAULT '{trigger_webhooks}'::character varying[]
@@ -869,10 +978,10 @@ CREATE TABLE public.classifications (
 
 CREATE TABLE public.collected_classification_contents (
     thing_id uuid NOT NULL,
-    direct_classification_alias_ids uuid[],
-    full_classification_alias_ids uuid[],
-    direct_tree_label_ids uuid[],
-    full_tree_label_ids uuid[]
+    classification_alias_id uuid NOT NULL,
+    classification_tree_label_id uuid NOT NULL,
+    direct boolean DEFAULT false,
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL
 );
 
 
@@ -889,52 +998,17 @@ CREATE TABLE public.collection_configurations (
 
 
 --
--- Name: things; Type: TABLE; Schema: public; Owner: -
+-- Name: thing_templates; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.things (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    metadata jsonb,
-    template_name character varying,
+CREATE TABLE public.thing_templates (
+    template_name character varying NOT NULL,
     schema jsonb,
-    template boolean DEFAULT false NOT NULL,
-    internal_name character varying,
-    external_source_id uuid,
-    external_key character varying,
-    created_by uuid,
-    updated_by uuid,
-    deleted_by uuid,
-    cache_valid_since timestamp without time zone,
-    created_at timestamp without time zone DEFAULT transaction_timestamp() NOT NULL,
-    updated_at timestamp without time zone DEFAULT transaction_timestamp() NOT NULL,
-    deleted_at timestamp without time zone,
-    given_name character varying,
-    family_name character varying,
-    start_date timestamp without time zone,
-    end_date timestamp without time zone,
-    longitude double precision,
-    latitude double precision,
-    elevation double precision,
-    location public.geometry(Point,4326),
-    address_locality character varying,
-    street_address character varying,
-    postal_code character varying,
-    address_country character varying,
-    fax_number character varying,
-    telephone character varying,
-    email character varying,
-    is_part_of uuid,
-    validity_range tstzrange,
-    boost numeric,
-    content_type character varying,
-    representation_of_id uuid,
-    version_name character varying,
-    line public.geometry(MultiLineStringZ,4326),
-    last_updated_locale character varying,
-    write_history boolean DEFAULT false,
-    geom_simple public.geometry(Geometry,4326),
     computed_schema_types character varying[],
-    geom public.geometry(GeometryZ,4326)
+    content_type character varying GENERATED ALWAYS AS ((schema ->> 'content_type'::text)) STORED,
+    boost numeric GENERATED ALWAYS AS (((schema -> 'boost'::text))::numeric) STORED,
+    created_at timestamp without time zone DEFAULT transaction_timestamp() NOT NULL,
+    updated_at timestamp without time zone DEFAULT transaction_timestamp() NOT NULL
 );
 
 
@@ -943,12 +1017,11 @@ CREATE TABLE public.things (
 --
 
 CREATE VIEW public.content_properties AS
- SELECT things.id AS content_id,
-    things.template_name AS content_template_name,
+ SELECT thing_templates.template_name,
     properties.key AS property_name,
     properties.value AS property_definition
-   FROM public.things,
-    LATERAL jsonb_each((things.schema -> 'properties'::text)) properties(key, value);
+   FROM (public.thing_templates
+     CROSS JOIN LATERAL jsonb_each((thing_templates.schema -> 'properties'::text)) properties(key, value));
 
 
 --
@@ -956,13 +1029,12 @@ CREATE VIEW public.content_properties AS
 --
 
 CREATE VIEW public.content_computed_properties AS
- SELECT content_properties.content_id,
-    content_properties.content_template_name,
+ SELECT content_properties.template_name,
     content_properties.property_name,
     split_part(parameters.value, '.'::text, 1) AS compute_parameter_property_name
    FROM public.content_properties,
     LATERAL jsonb_array_elements_text(((content_properties.property_definition -> 'compute'::text) -> 'parameters'::text)) parameters(value)
-  WHERE (content_properties.property_definition ? 'compute'::text);
+  WHERE (jsonb_typeof(((content_properties.property_definition -> 'compute'::text) -> 'parameters'::text)) = 'array'::text);
 
 
 --
@@ -1085,6 +1157,38 @@ UNION
 
 
 --
+-- Name: things; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.things (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    metadata jsonb,
+    template_name character varying NOT NULL,
+    external_source_id uuid,
+    external_key character varying,
+    created_by uuid,
+    updated_by uuid,
+    deleted_by uuid,
+    cache_valid_since timestamp without time zone,
+    created_at timestamp without time zone DEFAULT transaction_timestamp() NOT NULL,
+    updated_at timestamp without time zone DEFAULT transaction_timestamp() NOT NULL,
+    deleted_at timestamp without time zone,
+    location public.geometry(Point,4326),
+    is_part_of uuid,
+    validity_range tstzrange,
+    boost numeric,
+    content_type character varying,
+    representation_of_id uuid,
+    version_name character varying,
+    line public.geometry(MultiLineStringZ,4326),
+    last_updated_locale character varying,
+    write_history boolean DEFAULT false NOT NULL,
+    geom_simple public.geometry(Geometry,4326),
+    geom public.geometry(GeometryZ,4326)
+);
+
+
+--
 -- Name: content_meta_items; Type: VIEW; Schema: public; Owner: -
 --
 
@@ -1092,14 +1196,14 @@ CREATE VIEW public.content_meta_items AS
  SELECT things.id,
     'DataCycleCore::Thing'::text AS content_type,
     things.template_name,
-    things.schema,
+    thing_templates.schema,
     things.external_source_id,
     things.external_key,
     things.created_by,
     things.updated_by,
     things.deleted_by
-   FROM public.things
-  WHERE (things.template IS FALSE);
+   FROM (public.things
+     JOIN public.thing_templates ON (((thing_templates.template_name)::text = (things.template_name)::text)));
 
 
 --
@@ -1107,15 +1211,27 @@ CREATE VIEW public.content_meta_items AS
 --
 
 CREATE VIEW public.content_property_dependencies AS
- SELECT content_computed_properties.content_id,
-    content_computed_properties.content_template_name,
+ SELECT t2.id AS content_id,
+    t2.template_name,
     content_computed_properties.property_name,
     content_computed_properties.compute_parameter_property_name,
     things.id AS dependent_content_id,
     things.template_name AS dependent_content_template_name
-   FROM ((public.things
+   FROM (((public.things
      JOIN public.content_contents ON ((content_contents.content_b_id = things.id)))
-     JOIN public.content_computed_properties ON (((content_computed_properties.content_id = content_contents.content_a_id) AND (content_computed_properties.compute_parameter_property_name = (content_contents.relation_a)::text))));
+     JOIN public.things t2 ON ((t2.id = content_contents.content_a_id)))
+     JOIN public.content_computed_properties ON ((((content_computed_properties.template_name)::text = (t2.template_name)::text) AND (content_computed_properties.compute_parameter_property_name = (content_contents.relation_a)::text))))
+UNION
+ SELECT t2.id AS content_id,
+    t2.template_name,
+    content_computed_properties.property_name,
+    content_computed_properties.compute_parameter_property_name,
+    things.id AS dependent_content_id,
+    things.template_name AS dependent_content_template_name
+   FROM (((public.things
+     JOIN public.content_contents ON (((content_contents.content_a_id = things.id) AND (content_contents.relation_b IS NOT NULL))))
+     JOIN public.things t2 ON ((t2.id = content_contents.content_b_id)))
+     JOIN public.content_computed_properties ON ((((content_computed_properties.template_name)::text = (t2.template_name)::text) AND (content_computed_properties.compute_parameter_property_name = (content_contents.relation_b)::text))));
 
 
 --
@@ -1161,6 +1277,22 @@ ALTER SEQUENCE public.delayed_jobs_id_seq OWNED BY public.delayed_jobs.id;
 
 
 --
+-- Name: delayed_jobs_statistics; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.delayed_jobs_statistics AS
+ SELECT delayed_jobs.queue AS queue_name,
+    sum(1) FILTER (WHERE (delayed_jobs.failed_at IS NOT NULL)) AS failed,
+    sum(1) FILTER (WHERE ((delayed_jobs.failed_at IS NULL) AND (delayed_jobs.locked_at IS NOT NULL) AND (delayed_jobs.locked_by IS NOT NULL))) AS running,
+    sum(1) FILTER (WHERE ((delayed_jobs.failed_at IS NULL) AND (delayed_jobs.locked_at IS NULL) AND (delayed_jobs.locked_by IS NULL))) AS queued,
+    array_agg(DISTINCT delayed_jobs.delayed_reference_type) FILTER (WHERE (delayed_jobs.failed_at IS NOT NULL)) AS failed_types,
+    array_agg(DISTINCT delayed_jobs.delayed_reference_type) FILTER (WHERE ((delayed_jobs.failed_at IS NULL) AND (delayed_jobs.locked_at IS NOT NULL) AND (delayed_jobs.locked_by IS NOT NULL))) AS running_types,
+    array_agg(DISTINCT delayed_jobs.delayed_reference_type) FILTER (WHERE ((delayed_jobs.failed_at IS NULL) AND (delayed_jobs.locked_at IS NULL) AND (delayed_jobs.locked_by IS NULL))) AS queued_types
+   FROM public.delayed_jobs
+  GROUP BY delayed_jobs.queue;
+
+
+--
 -- Name: thing_duplicates; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1196,6 +1328,22 @@ UNION
     thing_duplicates.id AS thing_duplicate_id,
     thing_duplicates.false_positive
    FROM public.thing_duplicates;
+
+
+--
+-- Name: external_hashes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.external_hashes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    external_source_id uuid NOT NULL,
+    external_key character varying NOT NULL,
+    hash_value character varying,
+    locale character varying NOT NULL,
+    seen_at timestamp without time zone,
+    created_at timestamp without time zone NOT NULL,
+    updated_at timestamp without time zone NOT NULL
+);
 
 
 --
@@ -1236,7 +1384,7 @@ CREATE TABLE public.external_systems (
     last_successful_download timestamp without time zone,
     last_import timestamp without time zone,
     last_successful_import timestamp without time zone,
-    deactivated boolean DEFAULT false,
+    deactivated boolean DEFAULT false NOT NULL,
     last_successful_download_time interval,
     last_download_time interval,
     last_successful_import_time interval,
@@ -1388,8 +1536,8 @@ CREATE TABLE public.stored_filters (
     user_id uuid,
     language character varying[],
     parameters jsonb,
-    system boolean DEFAULT false,
-    api boolean DEFAULT false,
+    system boolean DEFAULT false NOT NULL,
+    api boolean DEFAULT false NOT NULL,
     created_at timestamp without time zone NOT NULL,
     updated_at timestamp without time zone NOT NULL,
     api_users text[],
@@ -1422,9 +1570,6 @@ CREATE TABLE public.thing_histories (
     thing_id uuid NOT NULL,
     metadata jsonb,
     template_name character varying,
-    schema jsonb,
-    template boolean DEFAULT false NOT NULL,
-    internal_name character varying,
     external_source_id uuid,
     external_key character varying,
     created_by uuid,
@@ -1434,21 +1579,7 @@ CREATE TABLE public.thing_histories (
     created_at timestamp without time zone NOT NULL,
     updated_at timestamp without time zone NOT NULL,
     deleted_at timestamp without time zone,
-    given_name character varying,
-    family_name character varying,
-    start_date timestamp without time zone,
-    end_date timestamp without time zone,
-    longitude double precision,
-    latitude double precision,
-    elevation double precision,
     location public.geometry(Point,4326),
-    address_locality character varying,
-    street_address character varying,
-    postal_code character varying,
-    address_country character varying,
-    fax_number character varying,
-    telephone character varying,
-    email character varying,
     is_part_of uuid,
     validity_range tstzrange,
     boost numeric,
@@ -1469,8 +1600,6 @@ CREATE TABLE public.thing_history_translations (
     thing_history_id uuid NOT NULL,
     locale character varying NOT NULL,
     content jsonb,
-    name character varying,
-    description text,
     created_at timestamp without time zone NOT NULL,
     updated_at timestamp without time zone NOT NULL,
     slug character varying
@@ -1486,8 +1615,6 @@ CREATE TABLE public.thing_translations (
     thing_id uuid NOT NULL,
     locale character varying NOT NULL,
     content jsonb,
-    name character varying,
-    description text,
     created_at timestamp without time zone NOT NULL,
     updated_at timestamp without time zone NOT NULL,
     slug character varying
@@ -1560,7 +1687,6 @@ CREATE TABLE public.users (
     role_id uuid,
     notification_frequency character varying DEFAULT 'always'::character varying,
     access_token character varying,
-    type character varying DEFAULT 'DataCycleCore::User'::character varying,
     name character varying,
     default_locale character varying DEFAULT 'de'::character varying,
     provider character varying,
@@ -1607,7 +1733,7 @@ CREATE TABLE public.watch_lists (
     full_path_names character varying[],
     my_selection boolean DEFAULT false NOT NULL,
     manual_order boolean DEFAULT false NOT NULL,
-    api boolean DEFAULT false
+    api boolean DEFAULT false NOT NULL
 );
 
 
@@ -1691,6 +1817,14 @@ ALTER TABLE ONLY public.classification_alias_paths_transitive
 
 
 --
+-- Name: classification_alias_paths_transitive classification_alias_paths_transitive_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.classification_alias_paths_transitive
+    ADD CONSTRAINT classification_alias_paths_transitive_unique UNIQUE (full_path_ids);
+
+
+--
 -- Name: classification_content_histories classification_content_histories_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1767,7 +1901,7 @@ ALTER TABLE ONLY public.classification_trees
 --
 
 ALTER TABLE ONLY public.collected_classification_contents
-    ADD CONSTRAINT collected_classification_contents_pkey PRIMARY KEY (thing_id);
+    ADD CONSTRAINT collected_classification_contents_pkey PRIMARY KEY (id);
 
 
 --
@@ -1816,6 +1950,14 @@ ALTER TABLE ONLY public.delayed_jobs
 
 ALTER TABLE ONLY public.data_links
     ADD CONSTRAINT edit_links_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: external_hashes external_hashes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.external_hashes
+    ADD CONSTRAINT external_hashes_pkey PRIMARY KEY (id);
 
 
 --
@@ -1920,6 +2062,14 @@ ALTER TABLE ONLY public.thing_histories
 
 ALTER TABLE ONLY public.thing_history_translations
     ADD CONSTRAINT thing_history_translations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: thing_templates thing_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.thing_templates
+    ADD CONSTRAINT thing_templates_pkey PRIMARY KEY (template_name);
 
 
 --
@@ -2043,13 +2193,6 @@ CREATE INDEX by_external_system_id_syncable_id ON public.external_system_syncs U
 
 
 --
--- Name: by_template_name_template; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX by_template_name_template ON public.things USING btree (template_name, template);
-
-
---
 -- Name: by_thing_id_version_name; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2071,31 +2214,24 @@ CREATE INDEX capt_classification_alias_id_idx ON public.classification_alias_pat
 
 
 --
--- Name: ccc_direct_classification_alias_ids_idx; Type: INDEX; Schema: public; Owner: -
+-- Name: ccc_ca_id_t_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ccc_direct_classification_alias_ids_idx ON public.collected_classification_contents USING gin (direct_classification_alias_ids);
-
-
---
--- Name: ccc_direct_tree_label_ids_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ccc_direct_tree_label_ids_idx ON public.collected_classification_contents USING gin (direct_tree_label_ids);
+CREATE INDEX ccc_ca_id_t_id_idx ON public.collected_classification_contents USING btree (classification_alias_id, thing_id, direct);
 
 
 --
--- Name: ccc_full_classification_alias_ids_idx; Type: INDEX; Schema: public; Owner: -
+-- Name: ccc_ctl_id_t_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ccc_full_classification_alias_ids_idx ON public.collected_classification_contents USING gin (full_classification_alias_ids);
+CREATE INDEX ccc_ctl_id_t_id_idx ON public.collected_classification_contents USING btree (classification_tree_label_id, thing_id, direct);
 
 
 --
--- Name: ccc_full_tree_label_ids_idx; Type: INDEX; Schema: public; Owner: -
+-- Name: ccc_unique_thing_id_classification_alias_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ccc_full_tree_label_ids_idx ON public.collected_classification_contents USING gin (full_tree_label_ids);
+CREATE UNIQUE INDEX ccc_unique_thing_id_classification_alias_id_idx ON public.collected_classification_contents USING btree (thing_id, classification_alias_id);
 
 
 --
@@ -2138,6 +2274,13 @@ CREATE INDEX classification_content_data_history_id_idx ON public.classification
 --
 
 CREATE UNIQUE INDEX classification_groups_ca_id_c_id_uq_idx ON public.classification_groups USING btree (classification_alias_id, classification_id) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: classification_polygons_classification_alias_id_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX classification_polygons_classification_alias_id_id_idx ON public.classification_polygons USING btree (classification_alias_id, id);
 
 
 --
@@ -2358,6 +2501,13 @@ CREATE UNIQUE INDEX index_classification_aliases_on_id ON public.classification_
 
 
 --
+-- Name: index_classification_aliases_unique_external_source_id_and_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_classification_aliases_unique_external_source_id_and_key ON public.classification_aliases USING btree (external_source_id, external_key) WHERE (deleted_at IS NULL);
+
+
+--
 -- Name: index_classification_content_histories_on_classification_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2470,6 +2620,13 @@ CREATE INDEX index_classification_trees_on_parent_classification_alias_id ON pub
 
 
 --
+-- Name: index_classification_trees_unique_classification_alias; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_classification_trees_unique_classification_alias ON public.classification_trees USING btree (classification_alias_id) WHERE (deleted_at IS NULL);
+
+
+--
 -- Name: index_classification_user_groups_on_classification_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2509,6 +2666,13 @@ CREATE INDEX index_classifications_on_external_source_id ON public.classificatio
 --
 
 CREATE UNIQUE INDEX index_classifications_on_id ON public.classifications USING btree (id);
+
+
+--
+-- Name: index_classifications_unique_external_source_id_and_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_classifications_unique_external_source_id_and_key ON public.classifications USING btree (external_source_id, external_key) WHERE (deleted_at IS NULL);
 
 
 --
@@ -2558,6 +2722,13 @@ CREATE INDEX index_data_links_on_item_id ON public.data_links USING btree (item_
 --
 
 CREATE INDEX index_data_links_on_item_type ON public.data_links USING btree (item_type);
+
+
+--
+-- Name: index_external_hash_on_external_source_id_external_key_locale; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_external_hash_on_external_source_id_external_key_locale ON public.external_hashes USING btree (external_source_id, external_key, locale);
 
 
 --
@@ -2645,10 +2816,10 @@ CREATE INDEX index_schedules_on_relation ON public.schedules USING btree (relati
 
 
 --
--- Name: index_schedules_on_thing_id; Type: INDEX; Schema: public; Owner: -
+-- Name: index_schedules_on_thing_id_id_relation; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX index_schedules_on_thing_id ON public.schedules USING btree (thing_id);
+CREATE INDEX index_schedules_on_thing_id_id_relation ON public.schedules USING btree (thing_id, id, relation);
 
 
 --
@@ -2785,6 +2956,27 @@ CREATE UNIQUE INDEX index_thing_id_locale ON public.thing_translations USING btr
 
 
 --
+-- Name: index_thing_templates_on_boost; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_thing_templates_on_boost ON public.thing_templates USING btree (boost);
+
+
+--
+-- Name: index_thing_templates_on_computed_schema_types; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_thing_templates_on_computed_schema_types ON public.thing_templates USING gin (computed_schema_types);
+
+
+--
+-- Name: index_thing_templates_on_content_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_thing_templates_on_content_type ON public.thing_templates USING btree (content_type);
+
+
+--
 -- Name: index_thing_translations_on_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2817,13 +3009,6 @@ CREATE INDEX index_thing_translations_on_thing_id ON public.thing_translations U
 --
 
 CREATE INDEX index_things_on_boost_updated_at_id ON public.things USING btree (boost, updated_at, id);
-
-
---
--- Name: index_things_on_content_type; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_things_on_content_type ON public.things USING btree (((schema ->> 'content_type'::text)));
 
 
 --
@@ -2897,17 +3082,10 @@ CREATE INDEX index_things_on_representation_of_id ON public.things USING btree (
 
 
 --
--- Name: index_things_on_schema_type; Type: INDEX; Schema: public; Owner: -
+-- Name: index_things_on_template_name; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX index_things_on_schema_type ON public.things USING btree (((schema ->> 'schema_type'::text)));
-
-
---
--- Name: index_things_on_template_content_type_validity_range; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_things_on_template_content_type_validity_range ON public.things USING btree (id, template, content_type, validity_range, template_name);
+CREATE INDEX index_things_on_template_name ON public.things USING btree (template_name);
 
 
 --
@@ -2915,13 +3093,6 @@ CREATE INDEX index_things_on_template_content_type_validity_range ON public.thin
 --
 
 CREATE INDEX index_things_on_updated_by ON public.things USING btree (updated_by);
-
-
---
--- Name: index_things_template_template_name_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_things_template_template_name_idx ON public.things USING btree (template, template_name);
 
 
 --
@@ -3068,21 +3239,21 @@ CREATE UNIQUE INDEX thing_attribute_timestamp_idx ON public.timeseries USING btr
 -- Name: thing_translations_name_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX thing_translations_name_idx ON public.thing_translations USING gin (name public.gin_trgm_ops);
+CREATE INDEX thing_translations_name_idx ON public.thing_translations USING btree (((content ->> 'name'::text)));
 
 
 --
--- Name: things_computed_schema_types_idx; Type: INDEX; Schema: public; Owner: -
+-- Name: things_geom_simple_geography_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX things_computed_schema_types_idx ON public.things USING gin (computed_schema_types);
+CREATE INDEX things_geom_simple_geography_idx ON public.things USING gist (public.geography(geom_simple));
 
 
 --
--- Name: things_template_name_template_uq_idx; Type: INDEX; Schema: public; Owner: -
+-- Name: things_id_content_type_validity_range_template_name_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX things_template_name_template_uq_idx ON public.things USING btree (template_name, template) WHERE (template = true);
+CREATE INDEX things_id_content_type_validity_range_template_name_idx ON public.things USING btree (id, content_type, validity_range, template_name);
 
 
 --
@@ -3156,9 +3327,7 @@ ALTER TABLE public.classification_contents DISABLE TRIGGER delete_ccc_relations_
 -- Name: classification_groups delete_ccc_relations_transitive_trigger; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER delete_ccc_relations_transitive_trigger AFTER DELETE ON public.classification_groups FOR EACH ROW EXECUTE FUNCTION public.delete_ca_paths_transitive_trigger_1();
-
-ALTER TABLE public.classification_groups DISABLE TRIGGER delete_ccc_relations_transitive_trigger;
+CREATE TRIGGER delete_ccc_relations_transitive_trigger AFTER DELETE ON public.classification_groups REFERENCING OLD TABLE AS old_classification_groups FOR EACH STATEMENT EXECUTE FUNCTION public.delete_ca_paths_transitive_trigger_1();
 
 
 --
@@ -3176,6 +3345,13 @@ CREATE TRIGGER delete_content_content_links_trigger BEFORE DELETE ON public.cont
 
 
 --
+-- Name: thing_translations delete_external_hashes_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER delete_external_hashes_trigger AFTER DELETE ON public.thing_translations REFERENCING OLD TABLE AS old_thing_translations FOR EACH STATEMENT EXECUTE FUNCTION public.delete_external_hashes_trigger_1();
+
+
+--
 -- Name: schedules delete_schedule_occurences_trigger; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -3186,21 +3362,21 @@ CREATE TRIGGER delete_schedule_occurences_trigger AFTER DELETE ON public.schedul
 -- Name: classification_aliases generate_ca_paths_transitive_trigger; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER generate_ca_paths_transitive_trigger AFTER INSERT ON public.classification_aliases FOR EACH ROW EXECUTE FUNCTION public.generate_ca_paths_transitive_trigger_1();
+CREATE TRIGGER generate_ca_paths_transitive_trigger AFTER INSERT ON public.classification_aliases REFERENCING NEW TABLE AS new_classification_aliases FOR EACH STATEMENT EXECUTE FUNCTION public.generate_ca_paths_transitive_statement_trigger_1();
 
 
 --
 -- Name: classification_tree_labels generate_ca_paths_transitive_trigger; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER generate_ca_paths_transitive_trigger AFTER INSERT ON public.classification_tree_labels FOR EACH ROW EXECUTE FUNCTION public.generate_ca_paths_transitive_trigger_3();
+CREATE TRIGGER generate_ca_paths_transitive_trigger AFTER INSERT ON public.classification_tree_labels REFERENCING NEW TABLE AS new_classification_tree_labels FOR EACH STATEMENT EXECUTE FUNCTION public.generate_ca_paths_transitive_statement_trigger_2();
 
 
 --
 -- Name: classification_trees generate_ca_paths_transitive_trigger; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER generate_ca_paths_transitive_trigger AFTER INSERT ON public.classification_trees FOR EACH ROW EXECUTE FUNCTION public.generate_ca_paths_transitive_trigger_2();
+CREATE TRIGGER generate_ca_paths_transitive_trigger AFTER INSERT ON public.classification_trees REFERENCING NEW TABLE AS new_classification_trees FOR EACH STATEMENT EXECUTE FUNCTION public.generate_ca_paths_transitive_statement_trigger_3();
 
 
 --
@@ -3225,9 +3401,7 @@ ALTER TABLE public.classification_contents DISABLE TRIGGER generate_ccc_relation
 -- Name: classification_groups generate_ccc_relations_transitive_trigger; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER generate_ccc_relations_transitive_trigger AFTER INSERT ON public.classification_groups FOR EACH ROW EXECUTE FUNCTION public.generate_ca_paths_transitive_trigger_4();
-
-ALTER TABLE public.classification_groups DISABLE TRIGGER generate_ccc_relations_transitive_trigger;
+CREATE TRIGGER generate_ccc_relations_transitive_trigger AFTER INSERT ON public.classification_groups REFERENCING NEW TABLE AS new_classification_groups FOR EACH STATEMENT EXECUTE FUNCTION public.generate_ca_paths_transitive_trigger_4();
 
 
 --
@@ -3255,7 +3429,7 @@ CREATE TRIGGER generate_classification_alias_paths_trigger AFTER INSERT ON publi
 -- Name: classification_alias_paths generate_collected_classification_content_relations_trigger; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER generate_collected_classification_content_relations_trigger AFTER INSERT OR UPDATE ON public.classification_alias_paths FOR EACH ROW EXECUTE FUNCTION public.generate_collected_classification_content_relations_trigger_3();
+CREATE TRIGGER generate_collected_classification_content_relations_trigger AFTER INSERT ON public.classification_alias_paths REFERENCING NEW TABLE AS new_classification_alias_paths FOR EACH STATEMENT EXECUTE FUNCTION public.generate_collected_classification_content_relations_trigger_5();
 
 
 --
@@ -3332,14 +3506,14 @@ CREATE TRIGGER geom_simple_update_trigger BEFORE UPDATE OF location, line, geom 
 -- Name: classification_trees insert_classification_tree_order_a_trigger; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER insert_classification_tree_order_a_trigger AFTER INSERT ON public.classification_trees FOR EACH ROW EXECUTE FUNCTION public.update_classification_trees_order_a_trigger();
+CREATE TRIGGER insert_classification_tree_order_a_trigger AFTER INSERT ON public.classification_trees REFERENCING NEW TABLE AS new_classification_trees FOR EACH STATEMENT EXECUTE FUNCTION public.insert_classification_trees_order_a_trigger();
 
 
 --
--- Name: things insert_thing_schema_types; Type: TRIGGER; Schema: public; Owner: -
+-- Name: thing_templates insert_thing_templates_schema_types; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER insert_thing_schema_types BEFORE INSERT ON public.things FOR EACH ROW EXECUTE FUNCTION public.generate_thing_schema_types();
+CREATE TRIGGER insert_thing_templates_schema_types BEFORE INSERT ON public.thing_templates FOR EACH ROW EXECUTE FUNCTION public.generate_thing_schema_types();
 
 
 --
@@ -3404,9 +3578,7 @@ ALTER TABLE public.classification_contents DISABLE TRIGGER update_ccc_relations_
 -- Name: classification_groups update_ccc_relations_transitive_trigger; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER update_ccc_relations_transitive_trigger AFTER UPDATE OF classification_id, classification_alias_id ON public.classification_groups FOR EACH ROW WHEN (((old.classification_id IS DISTINCT FROM new.classification_id) OR (old.classification_alias_id IS DISTINCT FROM new.classification_alias_id))) EXECUTE FUNCTION public.update_ca_paths_transitive_trigger_4();
-
-ALTER TABLE public.classification_groups DISABLE TRIGGER update_ccc_relations_transitive_trigger;
+CREATE TRIGGER update_ccc_relations_transitive_trigger AFTER UPDATE ON public.classification_groups REFERENCING OLD TABLE AS old_classification_groups NEW TABLE AS new_classification_groups FOR EACH STATEMENT EXECUTE FUNCTION public.update_ca_paths_transitive_trigger_4();
 
 
 --
@@ -3441,21 +3613,28 @@ CREATE TRIGGER update_classification_alias_paths_trigger AFTER UPDATE OF parent_
 -- Name: classification_aliases update_classification_aliases_order_a_trigger; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER update_classification_aliases_order_a_trigger AFTER UPDATE OF order_a ON public.classification_aliases FOR EACH ROW WHEN (((old.order_a IS DISTINCT FROM new.order_a) AND (old.updated_at IS DISTINCT FROM new.updated_at))) EXECUTE FUNCTION public.update_classification_aliases_order_a_trigger();
+CREATE TRIGGER update_classification_aliases_order_a_trigger AFTER UPDATE ON public.classification_aliases REFERENCING OLD TABLE AS old_classification_aliases NEW TABLE AS updated_classification_aliases FOR EACH STATEMENT EXECUTE FUNCTION public.update_classification_aliases_order_a_trigger();
 
 
 --
 -- Name: classification_trees update_classification_tree_order_a_trigger; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER update_classification_tree_order_a_trigger AFTER UPDATE OF parent_classification_alias_id, classification_tree_label_id ON public.classification_trees FOR EACH ROW WHEN (((old.parent_classification_alias_id IS DISTINCT FROM new.parent_classification_alias_id) OR (old.classification_tree_label_id IS DISTINCT FROM new.classification_tree_label_id))) EXECUTE FUNCTION public.update_classification_trees_order_a_trigger();
+CREATE TRIGGER update_classification_tree_order_a_trigger AFTER UPDATE ON public.classification_trees REFERENCING OLD TABLE AS old_classification_trees NEW TABLE AS new_classification_trees FOR EACH STATEMENT EXECUTE FUNCTION public.update_classification_trees_order_a_trigger();
 
 
 --
 -- Name: classification_trees update_classification_tree_tree_label_id_trigger; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER update_classification_tree_tree_label_id_trigger AFTER UPDATE OF classification_tree_label_id ON public.classification_trees FOR EACH ROW WHEN ((old.classification_tree_label_id IS DISTINCT FROM new.classification_tree_label_id)) EXECUTE FUNCTION public.update_classification_tree_tree_label_id_trigger();
+CREATE TRIGGER update_classification_tree_tree_label_id_trigger AFTER UPDATE ON public.classification_trees REFERENCING OLD TABLE AS old_classification_trees NEW TABLE AS new_classification_trees FOR EACH STATEMENT EXECUTE FUNCTION public.update_classification_tree_tree_label_id_trigger();
+
+
+--
+-- Name: classification_alias_paths update_collected_classification_content_relations_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER update_collected_classification_content_relations_trigger AFTER UPDATE ON public.classification_alias_paths FOR EACH ROW EXECUTE FUNCTION public.generate_collected_classification_content_relations_trigger_3();
 
 
 --
@@ -3490,9 +3669,7 @@ CREATE TRIGGER update_content_content_links_trigger AFTER UPDATE OF content_a_id
 -- Name: classification_groups update_deleted_at_ccc_relations_transitive_trigger; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER update_deleted_at_ccc_relations_transitive_trigger AFTER UPDATE OF deleted_at ON public.classification_groups FOR EACH ROW WHEN (((old.deleted_at IS NULL) AND (new.deleted_at IS NOT NULL))) EXECUTE FUNCTION public.delete_ca_paths_transitive_trigger_1();
-
-ALTER TABLE public.classification_groups DISABLE TRIGGER update_deleted_at_ccc_relations_transitive_trigger;
+CREATE TRIGGER update_deleted_at_ccc_relations_transitive_trigger AFTER UPDATE ON public.classification_groups REFERENCING OLD TABLE AS old_classification_groups NEW TABLE AS new_classification_groups FOR EACH STATEMENT EXECUTE FUNCTION public.delete_ca_paths_transitive_trigger_2();
 
 
 --
@@ -3517,25 +3694,33 @@ CREATE TRIGGER update_schedule_occurences_trigger AFTER UPDATE OF thing_id, dura
 
 
 --
--- Name: things update_template_definitions_trigger; Type: TRIGGER; Schema: public; Owner: -
+-- Name: thing_templates update_template_definitions_trigger; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER update_template_definitions_trigger AFTER UPDATE OF schema, boost, content_type ON public.things FOR EACH ROW WHEN (((new.template = true) AND ((old.schema IS DISTINCT FROM new.schema) OR (old.boost IS DISTINCT FROM new.boost) OR ((old.content_type)::text IS DISTINCT FROM (new.content_type)::text)))) EXECUTE FUNCTION public.update_template_definitions_trigger();
-
-
---
--- Name: things update_thing_schema_types; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER update_thing_schema_types BEFORE UPDATE OF template_name, schema ON public.things FOR EACH ROW WHEN ((((old.template_name)::text IS DISTINCT FROM (new.template_name)::text) OR (old.schema IS DISTINCT FROM new.schema))) EXECUTE FUNCTION public.generate_thing_schema_types();
+CREATE TRIGGER update_template_definitions_trigger AFTER UPDATE ON public.thing_templates REFERENCING OLD TABLE AS old_thing_templates NEW TABLE AS new_thing_templates FOR EACH STATEMENT EXECUTE FUNCTION public.update_template_definitions_trigger();
 
 
 --
--- Name: collected_classification_contents collected_classification_contents_thing_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: thing_templates update_thing_templates_schema_types; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER update_thing_templates_schema_types BEFORE UPDATE OF template_name, schema ON public.thing_templates FOR EACH ROW WHEN ((((old.template_name)::text IS DISTINCT FROM (new.template_name)::text) OR (old.schema IS DISTINCT FROM new.schema))) EXECUTE FUNCTION public.generate_thing_schema_types();
+
+
+--
+-- Name: collected_classification_contents fk_classification_aliases; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.collected_classification_contents
-    ADD CONSTRAINT collected_classification_contents_thing_id_fkey FOREIGN KEY (thing_id) REFERENCES public.things(id) ON DELETE CASCADE;
+    ADD CONSTRAINT fk_classification_aliases FOREIGN KEY (classification_alias_id) REFERENCES public.classification_aliases(id) ON DELETE CASCADE;
+
+
+--
+-- Name: collected_classification_contents fk_classification_tree_labels; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.collected_classification_contents
+    ADD CONSTRAINT fk_classification_tree_labels FOREIGN KEY (classification_tree_label_id) REFERENCES public.classification_tree_labels(id) ON DELETE CASCADE;
 
 
 --
@@ -3555,11 +3740,51 @@ ALTER TABLE ONLY public.collection_configurations
 
 
 --
+-- Name: external_hashes fk_external_hashes_things; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.external_hashes
+    ADD CONSTRAINT fk_external_hashes_things FOREIGN KEY (external_source_id, external_key) REFERENCES public.things(external_source_id, external_key) ON UPDATE CASCADE ON DELETE CASCADE NOT VALID;
+
+
+--
+-- Name: things fk_rails_08fe6d1543; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.things
+    ADD CONSTRAINT fk_rails_08fe6d1543 FOREIGN KEY (template_name) REFERENCES public.thing_templates(template_name) ON DELETE SET NULL NOT VALID;
+
+
+--
+-- Name: classification_trees fk_rails_0aeb2f8fa2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.classification_trees
+    ADD CONSTRAINT fk_rails_0aeb2f8fa2 FOREIGN KEY (external_source_id) REFERENCES public.external_systems(id) ON DELETE SET NULL NOT VALID;
+
+
+--
+-- Name: thing_histories fk_rails_2590768864; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.thing_histories
+    ADD CONSTRAINT fk_rails_2590768864 FOREIGN KEY (template_name) REFERENCES public.thing_templates(template_name) ON DELETE SET NULL NOT VALID;
+
+
+--
+-- Name: classification_trees fk_rails_344c9a3b48; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.classification_trees
+    ADD CONSTRAINT fk_rails_344c9a3b48 FOREIGN KEY (classification_alias_id) REFERENCES public.classification_aliases(id) ON DELETE CASCADE NOT VALID;
+
+
+--
 -- Name: user_group_users fk_rails_485739ff03; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_group_users
-    ADD CONSTRAINT fk_rails_485739ff03 FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+    ADD CONSTRAINT fk_rails_485739ff03 FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE NOT VALID;
 
 
 --
@@ -3571,11 +3796,59 @@ ALTER TABLE ONLY public.timeseries
 
 
 --
+-- Name: classification_trees fk_rails_617f767237; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.classification_trees
+    ADD CONSTRAINT fk_rails_617f767237 FOREIGN KEY (parent_classification_alias_id) REFERENCES public.classification_aliases(id) ON DELETE CASCADE NOT VALID;
+
+
+--
+-- Name: classification_contents fk_rails_6ff9fbf404; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.classification_contents
+    ADD CONSTRAINT fk_rails_6ff9fbf404 FOREIGN KEY (content_data_id) REFERENCES public.things(id) ON DELETE CASCADE NOT VALID;
+
+
+--
+-- Name: classifications fk_rails_72385dbd06; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.classifications
+    ADD CONSTRAINT fk_rails_72385dbd06 FOREIGN KEY (external_source_id) REFERENCES public.external_systems(id) ON DELETE SET NULL NOT VALID;
+
+
+--
+-- Name: classification_trees fk_rails_744c1d38fc; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.classification_trees
+    ADD CONSTRAINT fk_rails_744c1d38fc FOREIGN KEY (classification_tree_label_id) REFERENCES public.classification_tree_labels(id) ON DELETE CASCADE NOT VALID;
+
+
+--
+-- Name: classification_groups fk_rails_783650782d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.classification_groups
+    ADD CONSTRAINT fk_rails_783650782d FOREIGN KEY (classification_alias_id) REFERENCES public.classification_aliases(id) ON DELETE CASCADE NOT VALID;
+
+
+--
 -- Name: active_storage_variant_records fk_rails_993965df05; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.active_storage_variant_records
     ADD CONSTRAINT fk_rails_993965df05 FOREIGN KEY (blob_id) REFERENCES public.active_storage_blobs(id);
+
+
+--
+-- Name: classification_aliases fk_rails_a7798aa495; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.classification_aliases
+    ADD CONSTRAINT fk_rails_a7798aa495 FOREIGN KEY (external_source_id) REFERENCES public.external_systems(id) ON DELETE SET NULL NOT VALID;
 
 
 --
@@ -3587,11 +3860,43 @@ ALTER TABLE ONLY public.active_storage_attachments
 
 
 --
+-- Name: classification_alias_paths_transitive fk_rails_ca1c042635; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.classification_alias_paths_transitive
+    ADD CONSTRAINT fk_rails_ca1c042635 FOREIGN KEY (classification_alias_id) REFERENCES public.classification_aliases(id) ON DELETE CASCADE NOT VALID;
+
+
+--
+-- Name: classification_groups fk_rails_d9919e12e6; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.classification_groups
+    ADD CONSTRAINT fk_rails_d9919e12e6 FOREIGN KEY (classification_id) REFERENCES public.classifications(id) ON DELETE CASCADE NOT VALID;
+
+
+--
 -- Name: user_group_users fk_rails_da075980a7; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_group_users
-    ADD CONSTRAINT fk_rails_da075980a7 FOREIGN KEY (user_group_id) REFERENCES public.user_groups(id) ON DELETE CASCADE;
+    ADD CONSTRAINT fk_rails_da075980a7 FOREIGN KEY (user_group_id) REFERENCES public.user_groups(id) ON DELETE CASCADE NOT VALID;
+
+
+--
+-- Name: classification_groups fk_rails_f570600b17; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.classification_groups
+    ADD CONSTRAINT fk_rails_f570600b17 FOREIGN KEY (external_source_id) REFERENCES public.external_systems(id) ON DELETE SET NULL NOT VALID;
+
+
+--
+-- Name: collected_classification_contents fk_things; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.collected_classification_contents
+    ADD CONSTRAINT fk_things FOREIGN KEY (thing_id) REFERENCES public.things(id) ON DELETE CASCADE;
 
 
 --
@@ -3895,22 +4200,45 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20230303150323'),
 ('20230306092709'),
 ('20230313072638'),
-('20230313130117'),
 ('20230317083224'),
 ('20230321085100'),
 ('20230322145244'),
-('20230322160410'),
 ('20230329123152'),
-('20230329140200'),
 ('20230330081538'),
 ('20230403113641'),
 ('20230425060228'),
-('20230504121200'),
 ('20230515081146'),
 ('20230516132624'),
-('20230516150343'),
 ('20230517085644'),
-('20230525101028'),
-('20230531065846');
+('20230531065846'),
+('20230605061741'),
+('20230606085940'),
+('20230615093555'),
+('20230701115607'),
+('20230705061652'),
+('20230712062841'),
+('20230718071217'),
+('20230721072044'),
+('20230721072045'),
+('20230724083209'),
+('20230802112843'),
+('20230802112844'),
+('20230804062814'),
+('20230807063824'),
+('20230809085903'),
+('20230810101627'),
+('20230821094137'),
+('20230823081910'),
+('20230824060920'),
+('20231010095157'),
+('20231023100607'),
+('20231108115445'),
+('20231109091823'),
+('20231109142629'),
+('20231113104134'),
+('20231115104227'),
+('20231122124135'),
+('20231123103232'),
+('20231127144259');
 
 
