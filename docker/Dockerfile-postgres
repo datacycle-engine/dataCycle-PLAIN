@@ -1,10 +1,15 @@
-FROM postgres:13.4
+FROM postgres:16.4
 
 ENV POSTGIS_MAJOR 3
-ENV POSTGIS_VERSION 2.5.1+dfsg-1.pgdg90+1
 
 ENV TZ=Europe/Vienna
 ENV PGTZ=Europe/Vienna
+
+RUN apt-get -y install locales && \
+  sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
+  locale-gen
+ENV LANG en_US.UTF-8
+ENV LC_ALL en_US.UTF-8
 
 RUN apt-get update \
   && apt-cache showpkg postgresql-$PG_MAJOR-postgis-$POSTGIS_MAJOR \
@@ -19,7 +24,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 # install phash-hamming
-RUN git clone https://github.com/PixNyanNyan/postgres-phash-hamming.git /tmp/postgres-phash-hamming \
+RUN git clone https://github.com/zlajo/postgres-phash-hamming.git /tmp/postgres-phash-hamming \
   && cd /tmp/postgres-phash-hamming && make \
   && cd /tmp/postgres-phash-hamming && make install \
   && cd / && rm -Rf /tmp/postgres-phash-hamming
@@ -29,7 +34,7 @@ RUN git clone https://github.com/petropavel13/pg_rrule.git /tmp/pg_rrule \
   && cd /tmp/pg_rrule/src && qmake pg_rrule.pro \
   && cd /tmp/pg_rrule/ && make \
   && cd /tmp/pg_rrule/src && make \
-  && cp /tmp/pg_rrule/src/libpg_rrule.so /usr/lib/postgresql/13/lib/pg_rrule.so \
-  && cp /tmp/pg_rrule/pg_rrule.control /usr/share/postgresql/13/extension/ \
-  && cp /tmp/pg_rrule/sql/pg_rrule.sql /usr/share/postgresql/13/extension/pg_rrule--0.2.0.sql \
+  && cp /tmp/pg_rrule/src/libpg_rrule.so /usr/lib/postgresql/$PG_MAJOR/lib/pg_rrule.so \
+  && cp /tmp/pg_rrule/pg_rrule.control /usr/share/postgresql/$PG_MAJOR/extension/ \
+  && cp /tmp/pg_rrule/sql/pg_rrule.sql /usr/share/postgresql/$PG_MAJOR/extension/pg_rrule--0.2.0.sql \
   && cd / && rm -Rf /tmp/pg_rrule

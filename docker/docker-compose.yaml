@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   postgres:
     build:
@@ -9,7 +7,7 @@ services:
       - POSTGRES_DATABASE=${POSTGRES_DATABASE:-datacycle-plain_development}
       - POSTGRES_USER=${POSTGRES_USER:-developer}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
-      - POSTGRES_VERSION=${POSTGRES_VERSION:-13}
+      - POSTGRES_VERSION=${POSTGRES_VERSION:-16}
     shm_size: 4gb
   mongodb:
     image: mongo:3.6
