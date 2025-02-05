@@ -1024,11 +1024,6 @@ packages:
     engines: {node: '>=10'}
     hasBin: true
 
-  motion-ui@2.0.5:
-    resolution: {integrity: sha512-MJs4dS7/bSnJ92X5IB4bTIif6SwqwEDbX1F/eiUGSzIVhVTl4UqD8xr8ygg01dXZrpPrDjjUNoVkB8vT+PaY/g==}
-    peerDependencies:
-      jquery: '>=3.6.0'
-
   mpd-parser@0.22.1:
     resolution: {integrity: sha512-fwBebvpyPUU8bOzvhX0VQZgSohncbgYwUyJJoTSNpmy7ccD2ryiCvM7oRkn/xQH5cv73/xU7rJSNCLjdGFor0Q==}
     hasBin: true
@@ -1050,6 +1045,11 @@ packages:
   nanoid@3.3.7:
     resolution: {integrity: sha512-eSRppjcPIatRIMC1U6UngP8XFcz8MQWGQdt1MTBQ7NaAmvXDfvNxbvWV3x2y6CdEUciCSsDHDQZbhYaB8QEo2g==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
+    hasBin: true
+
+  nanoid@5.0.9:
+    resolution: {integrity: sha512-Aooyr6MXU6HpvvWXKoVoXwKMs/KyVakWwg7xQfv5/S/RIgJMy0Ifa45H9qqYy7pTCszrHzP21Uk4PZq2HpEM8Q==}
+    engines: {node: ^18 || >=20}
     hasBin: true
 
   nanopop@2.3.0:
@@ -2046,7 +2046,7 @@ snapshots:
       fetch-inject: 3.2.0
       flatpickr: 4.6.13
       font-awesome: 4.7.0
-      foundation-sites: 6.8.1(jquery@3.7.1)(motion-ui@2.0.5(jquery@3.7.1))(what-input@5.2.12)
+      foundation-sites: 6.8.1(jquery@3.7.1)(what-input@5.2.12)
       htmldiff: 0.0.4
       jquery: 3.7.1
       jquery-serializejson: 3.2.1
@@ -2057,7 +2057,7 @@ snapshots:
       luxon: 3.4.4
       maplibre-gl: 2.4.0
       mime: 3.0.0
-      motion-ui: 2.0.5(jquery@3.7.1)
+      nanoid: 5.0.9
       path: 0.12.7
       pretty-hrtime: 1.0.3
       quill: 1.3.7
@@ -2079,6 +2079,7 @@ snapshots:
       - encoding
       - less
       - lightningcss
+      - motion-ui
       - rollup
       - stylus
       - sugarss
@@ -2293,10 +2294,9 @@ snapshots:
       mime-types: 2.1.35
     optional: true
 
-  foundation-sites@6.8.1(jquery@3.7.1)(motion-ui@2.0.5(jquery@3.7.1))(what-input@5.2.12):
+  foundation-sites@6.8.1(jquery@3.7.1)(what-input@5.2.12):
     dependencies:
       jquery: 3.7.1
-      motion-ui: 2.0.5(jquery@3.7.1)
       what-input: 5.2.12
 
   fs-minipass@2.1.0:
@@ -2690,10 +2690,6 @@ snapshots:
   mkdirp@1.0.4:
     optional: true
 
-  motion-ui@2.0.5(jquery@3.7.1):
-    dependencies:
-      jquery: 3.7.1
-
   mpd-parser@0.22.1:
     dependencies:
       '@babel/runtime': 7.23.5
@@ -2714,6 +2710,8 @@ snapshots:
     optional: true
 
   nanoid@3.3.7: {}
+
+  nanoid@5.0.9: {}
 
   nanopop@2.3.0: {}
 
