@@ -2,9 +2,6 @@
 
 set -e
 
-./docker/web/bin/wait-for-it.sh $POSTGRES_HOST:5432
-./docker/web/bin/wait-for-it.sh $MONGODB_HOST:27017
-
 if [ "$1" == "rails" ] || [ "$1" == "bin/rails" ]; then
   rm -f tmp/pids/server.pid
 
@@ -21,7 +18,7 @@ if [ "$1" == "rails" ] || [ "$1" == "bin/rails" ]; then
 
     bin/rails db:seed
 
-    bin/rake data_cycle_core:update:import_classifications data_cycle_core:refactor:import_update_all_templates
+    bin/rake dc:update
   fi
 
   exec "$@"

@@ -5,5 +5,8 @@
   "author": "dataCycle GmbH",
   "dependencies": {
     "data-cycle-core": "file:vendor/gems/data-cycle-core"
+  },
+  "devDependencies": {
+    "data-cycle-core-dev": "file:vendor/gems/data-cycle-core/dev_dependencies"
   }
 }

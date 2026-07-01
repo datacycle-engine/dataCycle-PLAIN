@@ -1,4 +1,6 @@
-FROM postgres:16.4
+ARG POSTGRES_VERSION=16
+
+FROM postgres:$POSTGRES_VERSION
 
 ENV POSTGIS_MAJOR 3
 
@@ -14,13 +16,14 @@ ENV LC_ALL en_US.UTF-8
 RUN apt-get update \
   && apt-cache showpkg postgresql-$PG_MAJOR-postgis-$POSTGIS_MAJOR \
   && apt-get install -y --no-install-recommends \
-    postgresql-$PG_MAJOR-postgis-$POSTGIS_MAJOR \
-    postgresql-$PG_MAJOR-postgis-$POSTGIS_MAJOR-scripts \
-    postgresql-server-dev-$PG_MAJOR \
-    git build-essential software-properties-common openssh-client \
-    gettext-base \
-    libical-dev \
-    qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools \
+  postgresql-$PG_MAJOR-pgvector \
+  postgresql-$PG_MAJOR-postgis-$POSTGIS_MAJOR \
+  postgresql-$PG_MAJOR-postgis-$POSTGIS_MAJOR-scripts \
+  postgresql-server-dev-$PG_MAJOR \
+  git build-essential openssh-client ca-certificates \
+  gettext-base \
+  libical-dev \
+  qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools \
   && rm -rf /var/lib/apt/lists/*
 
 # install phash-hamming

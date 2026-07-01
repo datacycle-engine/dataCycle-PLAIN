@@ -1,0 +1,23 @@
+:main_filter:
+  :config:
+    :backend:
+      :filter:
+        - :search: true
+        - :classification_trees:
+            - SchemaTypes
+        - :advanced: true # can be a array with the same config as :advanced_filter:, this filters will always be shown in the advanced filter section
+    :things:
+      :filter:
+        - :search: true
+        - :classification_trees:
+            - SchemaTypes
+    :collection:
+      :filter:
+        - :search: true
+        - :classification_trees:
+            - SchemaTypes
+        - :advanced: true
+    :classification_tree:
+      :filter:
+        - :classification_trees:
+            - SchemaTypes

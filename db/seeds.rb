@@ -12,8 +12,10 @@ unless DataCycleCore::User.find_by(email: 'admin@home.com')
       family_name: 'Ministrator',
       external: false,
       password: password,
-      confirmed_at: Time.zone.now - 1.day,
-      role_id: DataCycleCore::Role.order('rank DESC').first.id
+      confirmed_at: 1.day.ago,
+      default_locale: I18n.default_locale,
+      ui_locale: I18n.default_locale,
+      role_id: DataCycleCore::Role.find_by(name: 'super_admin')&.id
     }
   )
 

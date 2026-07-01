@@ -2,26 +2,28 @@ default: &default
   adapter: postgis
   encoding: unicode
   schema_search_path: postgis, public
-  # For details on connection pooling, see Rails configuration guide
-  # http://guides.rubyonrails.org/configuring.html#database-pooling
-  pool: <%= Rails.application.secrets.dig(:puma_max_threads)&.*(2) || 10 %>
-  host:     <%= ENV["POSTGRES_HOST"] || "postgres" %>
-  port:     <%= ENV["POSTGRES_PORT"] || 5432 %>
+  # enough for threads + global_thread_pool
+  pool: <%= ENV["PUMA_MAX_THREADS"]&.to_i&.*(2) || 10 %>
+  host: <%= ENV["POSTGRES_HOST"] || "localhost" %>
+  port: <%= ENV["POSTGRES_PORT"] || 5432 %>
   username: <%= ENV["POSTGRES_USER"] || "developer" %>
   password: <%= ENV["POSTGRES_PASSWORD"] || "password" %>
+  variables:
+    statement_timeout: 1min
+    idle_in_transaction_session_timeout: 5min
 
 development:
   <<: *default
-  database: <%= ENV["POSTGRES_DATABASE"] || "datacycle-plain_development" %>
+  database: <%= ENV["POSTGRES_DATABASE"] %>
 
-
-# Warning: The database defined as "test" will be erased and
-# re-generated from your development database when you run "rake".
-# Do not set this db to the same as development or production.
 test:
   <<: *default
-  database: <%= ENV["POSTGRES_DATABASE_TEST"] || "datacycle-plain_test" %>
+  database: <%= (ENV["POSTGRES_DATABASE_TEST"] || "data-cycle-test") + ENV["TEST_ENV_NUMBER"].to_s %>
+
+staging:
+  <<: *default
+  database: <%= ENV["POSTGRES_DATABASE"] %>
 
 production:
   <<: *default
-  database: <%= ENV["POSTGRES_DATABASE"] || "datacycle-plain_production" %>
+  database: <%= ENV["POSTGRES_DATABASE"] %>

@@ -1,7 +1,7 @@
 services:
   postgres:
     build:
-      context: ${PWD}
+      context: ..
       dockerfile: docker/Dockerfile-postgres
     environment:
       - POSTGRES_DATABASE=${POSTGRES_DATABASE:-datacycle-plain_development}
@@ -9,11 +9,16 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
       - POSTGRES_VERSION=${POSTGRES_VERSION:-16}
     shm_size: 4gb
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -h localhost -U ${POSTGRES_USER:-developer} -d ${POSTGRES_DATABASE:-datacycle-plain_development}" ]
+      start_interval: 1s
+      start_period: 10s
+      interval: 30s
   mongodb:
-    image: mongo:3.6
+    image: mongo:8.2
   web:
     build:
-      context: ${PWD}
+      context: ..
       dockerfile: docker/Dockerfile-web
     environment:
       - RAILS_ENV=${RAILS_ENV:-development}
@@ -22,21 +27,26 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-developer}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
       - PGPASSWORD=${POSTGRES_PASSWORD:-password}
+      - REDIS_SERVER=${REDIS_SERVER:-redis}
       - MONGODB_HOST=${MONGODB_HOST:-mongodb}
       - APP_HOST=${APP_HOST:-localhost:3000}
     command: bin/rails server -b 0.0.0.0 -p 3000
     ports:
       - '3000:3000'
     depends_on:
-      - postgres
-      - mongodb
+      mongodb:
+        condition: service_started
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
     volumes:
-      - '${PWD}:/var/app'
+      - '..:/var/app'
     stdin_open: true
     tty: true
   jobs:
     build:
-      context: ${PWD}
+      context: ..
       dockerfile: docker/Dockerfile-web
     environment:
       - RAILS_ENV=${RAILS_ENV:-development}
@@ -45,12 +55,23 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-developer}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
       - PGPASSWORD=${POSTGRES_PASSWORD:-password}
+      - REDIS_SERVER=${REDIS_SERVER:-redis}
       - MONGODB_HOST=${MONGODB_HOST:-mongodb}
       - APP_HOST=${APP_HOST:-localhost:3000}
     command: bin/rake jobs:work
     depends_on:
-      - postgres
-      - mongodb
-      - web
+      mongodb:
+        condition: service_started
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      web:
+        condition: service_started
     volumes:
-      - '${PWD}:/var/app'
+      - '..:/var/app'
+  redis:
+    image: redis:8.4-alpine
+    command: >
+      --maxmemory 4gb --maxmemory-policy allkeys-lru --save 900 1 --save 300 10 --save 60 10000 --loglevel warning
+    restart: unless-stopped

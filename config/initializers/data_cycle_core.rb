@@ -1,9 +1,11 @@
 # frozen_string_literal: true
 
 DataCycleCore.setup do |config|
-  I18n.available_locales = %i[de en]
+  Rails.application.config.i18n.default_locale = :en
+  config.ui_locales = [:en, :de]
+  I18n.available_locales = [:en, :de]
   # Configure sensitive parameters which will be filtered from the log file.
-  Rails.application.config.filter_parameters += %i[password]
+  Rails.application.config.filter_parameters += [:password]
   Rails.application.config.session_store :cookie_store, key: '_datacycle-plain_session', same_site: :lax
 
   config.template_path = Rails.root.join('config', 'data_definitions').freeze

@@ -1,8 +1,6 @@
 [submodule "vendor/gems/data-cycle-core"]
 	path = vendor/gems/data-cycle-core
-	url = git@github.com:datacycle-engine/dataCycle-CORE.git
-	branch = master
+	url = https://github.com/datacycle-engine/dataCycle-CORE.git
 [submodule "vendor/gems/datacycle-schema-common"]
 	path = vendor/gems/datacycle-schema-common
-	url = git@github.com:datacycle-engine/dataCycle-SCHEMA-Common.git
-	branch = master
+	url = https://github.com/datacycle-engine/dataCycle-SCHEMA-Common.git
