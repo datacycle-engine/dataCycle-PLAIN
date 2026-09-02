@@ -1,4 +1,5 @@
 **/.git/
+**/.codegraph/
 **/.bundle/
 **/log/*
 **/*.log

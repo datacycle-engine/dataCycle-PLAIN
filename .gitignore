@@ -8,6 +8,10 @@ tmp/
 .env
 .tool-versions
 public/**/*
+# error pages and robots.txt come from dc:upgrade and are served straight out of
+# the image, so they have to be in the build context
+!public/*.html
+!public/robots.txt
 private/
 coverage/
 cache/
@@ -17,3 +21,6 @@ lib/assets
 compose.overrides.yaml
 var/
 .irb-history
+.codegraph/
+# codegraph's built-in defaults skip vendor/ even though our gems are tracked
+!vendor/

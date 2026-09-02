@@ -12,8 +12,9 @@
     "assetsDir": ""
   },
   "development": {
-    "autoBuild": true,
-    "publicOutputDir": "assets/dev-build"
+    "host": "127.0.0.1",
+    "publicOutputDir": "assets/dev-build",
+    "port": 3036
   },
   "test": {
     "autoBuild": true,
