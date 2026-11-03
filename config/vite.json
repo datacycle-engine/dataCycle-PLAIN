@@ -3,10 +3,12 @@
     "sourceCodeDir": "app/assets",
     "additionalEntrypoints": [
       "app/assets/images/**/*",
-      "vendor/gems/data-cycle-core/app/assets/{images,fonts}/**/*"
+      "vendor/gems/data-cycle-core/app/assets/{images,fonts}/**/*",
+      "vendor/gems/data-cycle-core/app/assets/entrypoints/**/*",
+      "vendor/gems/datacycle-*/app/assets/images/**/*"
     ],
     "watchAdditionalPaths": [
-      "vendor/gems/data-cycle-core/app/assets/**/*"
+      "vendor/gems/data-cycle-core/app/assets"
     ],
     "publicOutputDir": "assets/build",
     "assetsDir": ""
@@ -14,7 +16,8 @@
   "development": {
     "host": "127.0.0.1",
     "publicOutputDir": "assets/dev-build",
-    "port": 3036
+    "port": 3036,
+    "devServerConnectionCheck": true
   },
   "test": {
     "autoBuild": true,

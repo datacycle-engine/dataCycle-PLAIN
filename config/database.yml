@@ -9,8 +9,8 @@ default: &default
   # (DataCycleCore::WorkerPool.default_num_workers divides this by the worker's thread count).
   #
   # What limits the multiplier is the total across processes -- one per puma worker, plus the
-  # supervisor, dispatcher and one per worker entry in queue.yml -- against the postgres
-  # max_connections shared with grafana/alloy. Check the real number with
+  # supervisor, dispatcher and, per worker entry in queue.yml, as many as its `processes` says --
+  # against the postgres max_connections shared with grafana/alloy. Check the real number with
   # `SELECT count(*) FROM pg_stat_activity` before raising it, and use DB_POOL_SIZE to give a single
   # container more (the jobs one) instead of lifting every process at once.
   pool: <%= ENV["DB_POOL_SIZE"].presence&.to_i || ENV["PUMA_MAX_THREADS"]&.to_i&.*(3) || 15 %>
@@ -21,6 +21,9 @@ default: &default
   variables:
     statement_timeout: 1min
     idle_in_transaction_session_timeout: 5min
+    # pgvector >= 0.8: an HNSW scan continues past its candidate list (hnsw.ef_search, 40), so a
+    # similarity query can answer up to its 1,000 nearest instead of at most 40 (#49844)
+    hnsw.iterative_scan: relaxed_order
 
 development:
   <<: *default

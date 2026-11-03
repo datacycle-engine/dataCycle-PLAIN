@@ -1,10 +1,14 @@
 <!doctype html>
 
-<html lang="en">
+<html lang="de">
 
 <head>
 
-  <title>The change you wanted was rejected (422 Unprocessable Entity)</title>
+  <!--
+    No rendered counterpart: ErrorHandler#unprocessable_entity redirects to the root with a flash.
+    The title names the status the artwork draws - Rack calls 422 "Unprocessable Content" since RFC 9110.
+  -->
+  <title>422 Unprocessable Entity</title>
 
   <meta charset="utf-8">
   <meta name="viewport" content="initial-scale=1, width=device-width">
@@ -85,6 +89,11 @@
       font-size: 75%;
     }
 
+    main article p+p {
+      margin-top: 0.75em;
+      opacity: 0.75;
+    }
+
     main article br {
 
       display: none;
@@ -114,10 +123,29 @@
       </svg>
     </header>
     <article>
-      <p><strong>The change you wanted was rejected.</strong> Maybe you tried to change something you didn’t have access
-        to. If you’re the application owner check the logs for more information.</p>
+      <p lang="de"><strong>Die gewünschte Änderung wurde abgelehnt.</strong><br> Möglicherweise haben Sie versucht,
+        etwas zu ändern, wozu Sie keine Berechtigung haben.</p>
+      <p lang="en"><strong>The change you wanted was rejected.</strong><br> You may have tried to change something you
+        do not have access to.</p>
     </article>
   </main>
+
+  <script>
+    (function () {
+      var paragraphs = Array.prototype.slice.call(document.querySelectorAll('main article p[lang]'));
+      var locales = paragraphs.map(function (paragraph) { return paragraph.lang; });
+      var preferred = (navigator.languages || [navigator.language || '']).map(function (tag) {
+        return tag.split('-')[0].toLowerCase();
+      });
+      var locale = preferred.filter(function (tag) { return locales.indexOf(tag) !== -1; })[0];
+      if (!locale) return;
+
+      paragraphs.forEach(function (paragraph) {
+        if (paragraph.lang !== locale) paragraph.parentNode.removeChild(paragraph);
+      });
+      document.documentElement.lang = locale;
+    })();
+  </script>
 
 </body>
 

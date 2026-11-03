@@ -1,10 +1,15 @@
 <!doctype html>
 
-<html lang="en">
+<html lang="de">
 
 <head>
 
-  <title>The page you were looking for doesn’t exist (404 Not found)</title>
+  <!--
+    The lead sentence tracks exceptions_page.not_found, which DataCycleCore::ExceptionsController
+    renders for the same status; change them together. The second is static-only: the rendered 404
+    is reached from inside the backend, this one by a visitor who may simply have mistyped.
+  -->
+  <title>404 Not Found</title>
 
   <meta charset="utf-8">
   <meta name="viewport" content="initial-scale=1, width=device-width">
@@ -85,6 +90,11 @@
       font-size: 75%;
     }
 
+    main article p+p {
+      margin-top: 0.75em;
+      opacity: 0.75;
+    }
+
     main article br {
 
       display: none;
@@ -114,10 +124,29 @@
       </svg>
     </header>
     <article>
-      <p><strong>The page you were looking for doesn’t exist.</strong> You may have mistyped the address or the page may
-        have moved. If you’re the application owner check the logs for more information.</p>
+      <p lang="de"><strong>Diese Seite existiert leider nicht.</strong><br> Möglicherweise haben Sie sich vertippt
+        oder die Seite wurde verschoben.</p>
+      <p lang="en"><strong>Sorry, this page does not exist.</strong><br> You may have mistyped the address or the page
+        may have moved.</p>
     </article>
   </main>
+
+  <script>
+    (function () {
+      var paragraphs = Array.prototype.slice.call(document.querySelectorAll('main article p[lang]'));
+      var locales = paragraphs.map(function (paragraph) { return paragraph.lang; });
+      var preferred = (navigator.languages || [navigator.language || '']).map(function (tag) {
+        return tag.split('-')[0].toLowerCase();
+      });
+      var locale = preferred.filter(function (tag) { return locales.indexOf(tag) !== -1; })[0];
+      if (!locale) return;
+
+      paragraphs.forEach(function (paragraph) {
+        if (paragraph.lang !== locale) paragraph.parentNode.removeChild(paragraph);
+      });
+      document.documentElement.lang = locale;
+    })();
+  </script>
 
 </body>
 

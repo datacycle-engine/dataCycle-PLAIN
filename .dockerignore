@@ -12,11 +12,16 @@
 **/node_modules/
 **/.idea
 **/db/backups
-**/.env
+# `.env*`, not just `.env`: CI writes the production environment into the build context
+# as .env.production, and dotenv-rails - ungrouped in GemfileCore, so installed in the
+# production image too - loads whatever lands at /app/.env.production.
+**/.env*
 **/cache/
 
-# test suites / coverage / CI config - never needed inside the image
-# (incl. each engine gem's test/dummy app; nothing under test/ is loaded at runtime)
+# coverage output and CI config - never needed inside the image.
+# `test/` is deliberately NOT excluded: the Dockerfile's `test` stage is what CI runs
+# dc:validate and the Minitest suite from, so excluding it would break those jobs.
+# Nothing under test/ is loaded at runtime, so it costs only image size.
 **/spec/
 **/coverage/
 **/.github/

@@ -1,10 +1,13 @@
 <!doctype html>
 
-<html lang="en">
+<html lang="de">
 
 <head>
 
-  <title>The server cannot process the request due to a client error (400 Bad Request)</title>
+  <!--
+    No rendered counterpart: ErrorHandler#bad_request answers with head or json, so this copy stands alone.
+  -->
+  <title>400 Bad Request</title>
 
   <meta charset="utf-8">
   <meta name="viewport" content="initial-scale=1, width=device-width">
@@ -85,6 +88,11 @@
       font-size: 75%;
     }
 
+    main article p+p {
+      margin-top: 0.75em;
+      opacity: 0.75;
+    }
+
     main article br {
 
       display: none;
@@ -114,10 +122,28 @@
       </svg>
     </header>
     <article>
-      <p><strong>The server cannot process the request due to a client error.</strong> Please check the request and try
-        again. If you’re the application owner check the logs for more information.</p>
+      <p lang="de"><strong>Die Anfrage konnte nicht verarbeitet werden.</strong><br> Bitte prüfen Sie die Adresse
+        und versuchen Sie es erneut.</p>
+      <p lang="en"><strong>The request could not be processed.</strong><br> Please check the address and try again.</p>
     </article>
   </main>
+
+  <script>
+    (function () {
+      var paragraphs = Array.prototype.slice.call(document.querySelectorAll('main article p[lang]'));
+      var locales = paragraphs.map(function (paragraph) { return paragraph.lang; });
+      var preferred = (navigator.languages || [navigator.language || '']).map(function (tag) {
+        return tag.split('-')[0].toLowerCase();
+      });
+      var locale = preferred.filter(function (tag) { return locales.indexOf(tag) !== -1; })[0];
+      if (!locale) return;
+
+      paragraphs.forEach(function (paragraph) {
+        if (paragraph.lang !== locale) paragraph.parentNode.removeChild(paragraph);
+      });
+      document.documentElement.lang = locale;
+    })();
+  </script>
 
 </body>
 
